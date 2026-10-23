@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Odpočet naživo</title>
+<script>
+/* =========================================================
+   NASTAVENIE: sem vlož údaje zo Supabase
+   (Project Settings → API: Project URL a anon / publishable key)
+   ========================================================= */
+const SUPABASE_URL = "https://ivtgpardcsbftfbqryrd.supabase.co";
+const SUPABASE_KEY = "sb_publishable_6bqMX1xWR6KL4HM-NszHhg_YaBrY_OX";
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
+<style>
+/* Layout: divák (bez prihlásenia) = časomiera + program; #ovladanie = prihlásenie a ovládanie; #projektor = len časomiera; autor = nastavenie programu, potom ovládací panel s náhľadom; divák cez odkaz = bežiaca časomiera + program; #projektor = len časomiera na celú obrazovku */
+:root{
+  --bg:#000; --panel:#15171c; --line:#2a2e36; --fg:#fff; --muted:#9aa3b0;
+  --accent:#4f7dff; --accent-soft:#121a2c; --accent-line:#34508f;
+  --red:#ff3b30; --over:#400000; --ok:#30d158; --warn:#ff9f0a; --note:#ffd60a;
+  --f:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f);font-size:17px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+*{box-sizing:border-box}
+.wrap{max-width:800px;margin:0 auto;padding-block:24px 60px;display:flex;flex-direction:column;gap:18px}
+h1{margin:0;font-size:30px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+input,textarea{font:inherit;color:var(--fg);background:#0b0c0f;border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+input[type=number]{width:70px;text-align:right}
+textarea{width:100%;min-height:90px;resize:vertical}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#20242c;color:var(--fg);padding:10px 14px}
+button:hover{border-color:#444b57}
+button.primary{background:var(--accent);border-color:var(--accent);font-weight:700;font-size:20px;padding:16px}
+button.danger{color:var(--red)}
+button.icon{background:transparent;border:0;color:var(--muted);font-size:20px;padding:6px 10px}
+button:disabled{opacity:.3;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+.muted{color:var(--muted);font-size:14px;margin:0;line-height:1.5}
+.share{border-color:var(--accent-line);background:var(--accent-soft)}
+.share b{color:#fff}
+.status{font-size:14px;color:var(--warn);margin:0}
+code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px}
+
+.item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-block:4px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item .name{flex:1;min-width:140px}
+.item .ptitle{flex:1 1 100%;margin-left:32px;font-size:15px;color:#c9ced6}
+.num{width:24px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:flex-start}
+.seg button{border:0;border-radius:0;background:transparent;padding:10px 18px}
+.seg button[aria-pressed="true"]{background:var(--accent);font-weight:700}
+.fileBtn{display:inline-block;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#20242c;padding:10px 14px}
+.fileBtn input{display:none}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.csvMsg{font-size:14px;margin:0}
+.csvMsg.ok{color:var(--ok)}
+.csvMsg.err{color:var(--red)}
+
+.center{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;flex-direction:column;gap:12px}
+.center h2{margin:0;font-size:28px}
+
+/* obrazovka s časomierou: písmo sa riadi veľkosťou rámu, takže rovnako vyzerá na projektore aj v náhľade */
+.screen{container-type:size;width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;background:#000;color:#fff;padding:2cqh 2cqw;user-select:none;-webkit-user-select:none;overflow:hidden}
+.screen.over{background:var(--over)}
+.s-title{font-size:min(2.8cqw,3.6cqh);font-weight:500;color:var(--muted);margin-bottom:1.5cqh;max-width:90cqw;overflow-wrap:anywhere;line-height:1.3}
+.s-name{font-size:min(6cqw,8cqh);font-weight:600;margin-bottom:5cqh;max-width:95cqw;overflow-wrap:anywhere}
+.s-clock{font-size:min(30cqw,48cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
+.screen.over .s-clock{color:var(--red)}
+.s-status{font-size:min(4.5cqw,6cqh);font-weight:600;color:var(--red);min-height:1.3em}
+.s-break{font-size:min(7cqw,10cqh);font-weight:600;max-width:95cqw;overflow-wrap:anywhere}
+.s-time{font-size:min(20cqw,30cqh);font-weight:800;color:#b3b3b3;font-variant-numeric:tabular-nums;margin-top:4cqh}
+.s-end{font-size:min(10cqw,14cqh);font-weight:800}
+.s-wait{font-size:min(4cqw,6cqh);color:var(--muted)}
+#stageScreen .v-idle{display:none}
+
+#stage{position:fixed;inset:0;background:#000;z-index:5}
+.corner{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));background:transparent;border:0;color:#fff;opacity:.25;font-size:15px;padding:8px 12px;z-index:6}
+.corner:hover{opacity:.8}
+.stageHint{position:fixed;left:50%;bottom:calc(6% + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:rgba(20,24,32,.92);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:15px;max-width:90%;text-align:center;z-index:6}
+
+/* ovládací panel a pohľad pre divákov */
+.panelWrap{max-width:1240px;margin:0 auto;padding-block:16px 40px;display:flex;flex-direction:column;gap:14px}
+.cbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cbar strong{font-size:20px}
+.pill{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid #1f5f33;color:var(--ok)}
+.cgrid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.cgrid{grid-template-columns:1fr}}
+.cleft,.cright{display:flex;flex-direction:column;gap:12px;min-width:0}
+.plabel{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.previewBox{aspect-ratio:16/9;width:100%;max-width:100%;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.navRow{display:grid;grid-template-columns:auto 1fr;gap:10px}
+button.next{font-size:22px;padding:20px}
+button.back{font-size:18px;padding:0 18px}
+.adjRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.adjRow button{min-width:74px;font-variant-numeric:tabular-nums}
+.adjInfo{color:var(--note);font-size:14px}
+.upName{font-size:21px;font-weight:700;overflow-wrap:anywhere}
+.upMeta{color:var(--muted);font-size:15px}
+.prog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:56vh;overflow:auto}
+.prog li{display:grid;grid-template-columns:56px 1fr;gap:8px;padding:8px 10px;border-radius:8px}
+.prog li.cur{background:var(--accent-soft);outline:1px solid var(--accent-line)}
+.prog li.done{opacity:.45}
+.prog .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.prog .pn{overflow-wrap:anywhere}
+.prog .pt{display:block;font-size:13px;color:var(--muted)}
+.login{max-width:420px;margin:10vh auto 0;display:flex;flex-direction:column;gap:12px}
+.login input{width:100%}
+.err{color:var(--red);font-size:14px;margin:0}
+.pill.wait{border-color:#6b4a12;color:var(--warn)}
+.linkRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.linkRow code{flex:1;min-width:0;overflow-wrap:anywhere;padding:8px 10px}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<div class="center" id="loading">
+  <h2>Odpočet naživo</h2>
+  <p class="muted">Pripája sa…</p>
+</div>
+
+<div class="center" id="noaccess" hidden>
+  <h2>Odpočet sa nedá zobraziť</h2>
+  <p class="muted" id="noaccessText">Chýba nastavenie pripojenia k databáze. Doplň SUPABASE_URL a SUPABASE_KEY na začiatku súboru index.html.</p>
+</div>
+
+<!-- AUTOR: prihlásenie -->
+<div class="wrap" id="login" hidden>
+  <form class="card login" id="loginForm">
+    <h2>Ovládanie odpočtu</h2>
+    <p class="muted">Prihlás sa účtom, ktorý si vytvoril v Supabase. Diváci sa prihlasovať nemusia.</p>
+    <input id="email" type="email" autocomplete="username" placeholder="E-mail" aria-label="E-mail" required>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Heslo" aria-label="Heslo" required>
+    <button class="primary" type="submit" id="loginBtn">Prihlásiť sa</button>
+    <p class="err" id="loginErr" hidden></p>
+  </form>
+</div>
+
+<!-- AUTOR: nastavenie programu -->
+<div class="wrap" id="setup" hidden>
+  <h1>Odpočet naživo</h1>
+
+  <div class="card share">
+    <h2>Odkazy</h2>
+    <p class="muted"><b>Pre divákov</b>: vidia bežiacu časomieru a program, nič nemôžu meniť a nemusia sa prihlasovať.</p>
+    <div class="linkRow"><code id="linkViewer"></code><button class="copy" data-target="linkViewer">Kopírovať</button></div>
+    <p class="muted"><b>Pre projektor</b>: otvor ho na zariadení pri projektore, ukáže sa iba časomiera. Ťuknutím zapneš celú obrazovku.</p>
+    <div class="linkRow"><code id="linkProjector"></code><button class="copy" data-target="linkProjector">Kopírovať</button></div>
+    <div class="row"><button id="asProjector1">Táto obrazovka ako projektor</button><span class="grow"></span><button id="logoutBtn">Odhlásiť sa</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Poradie a časy</h2>
+    <div id="list"></div>
+    <div class="row">
+      <input id="newName" class="grow" type="text" placeholder="Nové meno" aria-label="Nové meno">
+      <button id="addBtn">Pridať</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Načítať zoznam z CSV tabuľky</h2>
+    <div class="drop" id="drop">
+      <div class="row" style="justify-content:center">
+        <label class="fileBtn">Vybrať CSV súbor<input id="csvInput" type="file" accept=".csv,.txt,text/csv,text/plain"></label>
+        <span class="muted">alebo ho sem pretiahni</span>
+      </div>
+    </div>
+    <div class="row">
+      <label class="row"><input type="radio" name="csvMode" id="csvReplace" checked> Nahradiť zoznam</label>
+      <label class="row"><input type="radio" name="csvMode" id="csvAppend"> Pridať na koniec</label>
+    </div>
+    <p class="muted">Prvý stĺpec je meno, druhý čas v minútach (<code>3</code>, <code>2,5</code>) alebo ako <code>3:30</code>, tretí nepovinný názov prezentácie. Riadok s nadpismi sa preskočí.</p>
+    <p class="csvMsg" id="csvMsg" hidden></p>
+  </div>
+
+  <div class="card">
+    <h2>Predvolený čas pre nové mená</h2>
+    <div class="row">
+      <input id="defMin" type="number" min="0" max="999" aria-label="Minúty"> min
+      <input id="defSec" type="number" min="0" max="59" aria-label="Sekundy"> s
+      <button id="applyAll">Nastaviť všetkým</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Text počas prestávky medzi menami</h2>
+    <input id="breakText" type="text" placeholder="Napríklad: Prestávka" aria-label="Text počas prestávky">
+  </div>
+
+  <div class="card">
+    <h2>Nápis po vypršaní času</h2>
+    <div class="seg" role="group" aria-label="Nápis po vypršaní času">
+      <button id="langSk" aria-pressed="true">Čas vypršal</button>
+      <button id="langEn" aria-pressed="false">Time's up</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="danger" id="clearBtn">Vymazať celý zoznam</button>
+      <span id="clearAsk" hidden>Naozaj? <button class="danger" id="clearYes">Áno, vymazať</button> <button id="clearNo">Zrušiť</button></span>
+    </div>
+  </div>
+
+  <button class="primary" id="startBtn">ŠTART</button>
+  <p class="status" id="saveStatus" hidden></p>
+</div>
+
+<!-- AUTOR: ovládací panel počas programu -->
+<div class="panelWrap" id="console" hidden>
+  <div class="cbar">
+    <strong>Ovládanie</strong>
+    <span class="pill" id="opPill">Naživo</span>
+    <span class="grow"></span>
+    <button id="asProjector2">Táto obrazovka ako projektor</button>
+    <button class="danger" id="cQuit">Ukončiť</button>
+    <span id="cQuitAsk" hidden>Ukončiť program? <button class="danger" id="cQuitYes">Áno</button> <button id="cQuitNo">Nie</button></span>
+  </div>
+  <div class="cgrid">
+    <div class="cleft">
+      <div class="plabel">Čo vidia ostatní</div>
+      <div class="previewBox"><div class="screen" id="preview"></div></div>
+      <div class="navRow">
+        <button class="back" id="backBtn" title="Vrátiť posledný krok">◀ Späť</button>
+        <button class="primary next" id="nextBtn">Ďalej</button>
+      </div>
+      <div class="adjRow">
+        <span class="muted">Upraviť čas:</span>
+        <button class="adj" data-d="-60">−1 min</button>
+        <button class="adj" data-d="-30">−30 s</button>
+        <button class="adj" data-d="30">+30 s</button>
+        <button class="adj" data-d="60">+1 min</button>
+        <span class="adjInfo" id="adjInfo"></span>
+      </div>
+      <p class="muted">Klávesy: medzerník, Enter alebo šípka doprava = ďalej, šípka doľava = späť, šípka hore/dole = ±30 s, + / − = ±1 min. Prezentačný ovládač funguje tiež.</p>
+      <p class="status" id="saveStatus2" hidden></p>
+    </div>
+    <div class="cright">
+      <div class="card"><h2>Nasleduje</h2><div id="upNext"></div></div>
+      <div class="card"><h2>Program</h2><ol class="prog" id="prog"></ol></div>
+    </div>
+  </div>
+</div>
+
+<!-- DIVÁK: časomiera + program -->
+<div class="panelWrap" id="viewer" hidden>
+  <div class="cbar">
+    <strong>Odpočet</strong>
+    <span class="pill wait" id="vPill">Pripája sa…</span>
+    <span class="grow"></span>
+    <button id="vFull">Len časomiera</button>
+  </div>
+  <div class="cgrid">
+    <div class="cleft">
+      <div class="previewBox"><div class="screen" id="vScreen"></div></div>
+    </div>
+    <div class="cright">
+      <div class="card"><h2>Nasleduje</h2><div id="vUp"></div></div>
+      <div class="card"><h2>Program</h2><ol class="prog" id="vProg"></ol></div>
+    </div>
+  </div>
+</div>
+
+<!-- Len časomiera na celú obrazovku (projektor) -->
+<div id="stage" hidden>
+  <div class="screen" id="stageScreen"></div>
+  <button class="corner" id="stageExit">✕ Zavrieť</button>
+  <div class="stageHint" id="stageHint" hidden>Ťukni sem pre celú obrazovku</div>
+</div>
+
+<template id="screenTpl">
+  <div class="v-idle"><div class="s-wait">Program ešte nezačal</div></div>
+  <div class="v-break" hidden><div class="s-break"></div><div class="s-time"></div></div>
+  <div class="v-person" hidden><div class="s-title"></div><div class="s-name"></div><div class="s-clock"></div><div class="s-status"></div></div>
+  <div class="v-end" hidden><div class="s-end">Koniec</div></div>
+</template>
+
+
+<script>
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const mmss = s => Math.floor(s / 60) + ":" + pad(s % 60);
+const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.max(0, parseInt(s) || 0));
+["preview", "vScreen", "stageScreen"].forEach(id => $(id).appendChild($("screenTpl").content.cloneNode(true)));
+
+const TABLE = "odpocet";
+let sb = null, db = null, isOp = false, session = null;
+let setup = { people: [], def: 180, breakText: "Prestávka", english: false };
+let state = { mode: "idle" };
+let hist = [];                                     // kroky na vrátenie (len u autora)
+const route = () => location.hash.replace("#", ""); // "", "ovladanie", "projektor"
+let projector = route() === "projektor";           // táto obrazovka = len časomiera
+let viewerFull = false;                            // divák si zapol len časomieru
+const lastUpdated = { setup: "", state: "" };
+
+/* ---------- Zápisy do databázy: vždy jeden naraz ---------- */
+let chain = Promise.resolve();
+function showSaveError(t) {
+  ["saveStatus", "saveStatus2"].forEach(id => { $(id).textContent = t; $(id).hidden = !t; });
+}
+function write(id, data) {
+  const stamp = new Date().toISOString();
+  lastUpdated[id] = stamp;
+  chain = chain
+    .then(() => sb.from(TABLE).upsert({ id, data, updated_at: stamp }))
+    .then(res => {
+      if (res && res.error) throw res.error;
+      showSaveError("");
+    })
+    .catch(e => {
+      const msg = e && e.message ? e.message : "skontroluj pripojenie";
+      showSaveError("Uloženie zlyhalo (" + msg + "). Skús to znova, prípadne sa odhlás a prihlás.");
+    });
+  return chain;
+}
+let setupTimer = null;
+function saveSetup(now) {
+  clearTimeout(setupTimer);
+  if (now) { write("setup", setup); return; }
+  setupTimer = setTimeout(() => write("setup", setup), 600);
+}
+
+/* ---------- Zoznam (autor) ---------- */
+function renderList() {
+  const L = $("list");
+  L.innerHTML = "";
+  const people = setup.people;
+  if (!people.length) L.innerHTML = '<p class="muted">Zoznam je prázdny. Pridaj meno nižšie alebo načítaj CSV tabuľku.</p>';
+  people.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "item";
+    row.innerHTML = `<span class="num">${i + 1}.</span>
+      <input class="name" type="text" placeholder="Meno" aria-label="Meno ${i + 1}">
+      <input type="number" min="0" max="999" aria-label="Minúty"> min
+      <input type="number" min="0" max="59" aria-label="Sekundy"> s
+      <button class="icon" title="Hore" ${i === 0 ? "disabled" : ""}>↑</button>
+      <button class="icon" title="Dole" ${i === people.length - 1 ? "disabled" : ""}>↓</button>
+      <button class="icon" title="Zmazať">×</button>
+      <input class="ptitle" type="text" placeholder="Názov prezentácie (nepovinné)" aria-label="Názov prezentácie ${i + 1}">`;
+    const [nI, mI, sI, tI] = row.querySelectorAll("input");
+    nI.value = p.n; mI.value = Math.floor(p.t / 60); sI.value = p.t % 60; tI.value = p.p || "";
+    nI.oninput = () => { p.n = nI.value; saveSetup(); };
+    tI.oninput = () => { p.p = tI.value; saveSetup(); };
+    const upd = () => { p.t = toSec(mI.value, sI.value); saveSetup(); renderStart(); };
+    mI.oninput = upd; sI.oninput = upd;
+    const [up, down, del] = row.querySelectorAll("button");
+    up.onclick = () => { [people[i - 1], people[i]] = [people[i], people[i - 1]]; saveSetup(true); renderList(); };
+    down.onclick = () => { [people[i + 1], people[i]] = [people[i], people[i + 1]]; saveSetup(true); renderList(); };
+    del.onclick = () => { people.splice(i, 1); saveSetup(true); renderList(); };
+    L.appendChild(row);
+  });
+  renderStart();
+}
+function renderStart() {
+  const total = setup.people.reduce((a, p) => a + p.t, 0);
+  $("startBtn").textContent = "ŠTART   ·   spolu " + mmss(total);
+  $("startBtn").disabled = !setup.people.length;
+}
+function renderLang() {
+  $("langSk").setAttribute("aria-pressed", String(!setup.english));
+  $("langEn").setAttribute("aria-pressed", String(!!setup.english));
+}
+function renderSetupFields() {
+  $("defMin").value = Math.floor(setup.def / 60);
+  $("defSec").value = setup.def % 60;
+  $("breakText").value = setup.breakText;
+  renderLang();
+  renderList();
+}
+function addName(n) { n = n.trim(); if (n) setup.people.push({ n, t: setup.def, p: "" }); }
+
+$("addBtn").onclick = () => { addName($("newName").value); $("newName").value = ""; saveSetup(true); renderList(); };
+$("newName").onkeydown = e => { if (e.key === "Enter") $("addBtn").click(); };
+$("defMin").oninput = $("defSec").oninput = () => { setup.def = toSec($("defMin").value, $("defSec").value); saveSetup(); };
+$("applyAll").onclick = () => { setup.people.forEach(p => p.t = setup.def); saveSetup(true); renderList(); };
+$("breakText").oninput = () => { setup.breakText = $("breakText").value; saveSetup(); };
+$("langSk").onclick = () => { setup.english = false; saveSetup(true); renderLang(); };
+$("langEn").onclick = () => { setup.english = true; saveSetup(true); renderLang(); };
+$("clearBtn").onclick = () => { $("clearAsk").hidden = false; };
+$("clearNo").onclick = () => { $("clearAsk").hidden = true; };
+$("clearYes").onclick = () => { setup.people = []; saveSetup(true); renderList(); $("clearAsk").hidden = true; };
+
+/* ---------- CSV ---------- */
+// čas: "3" alebo "2,5" = minúty, "3:30" = min:s, "1:02:30" = h:min:s
+function parseTime(v) {
+  v = String(v || "").trim().toLowerCase().replace(/\s*(min|m)\.?$/, "");
+  if (!v) return null;
+  if (/^\d+\s*s$/.test(v)) return parseInt(v);
+  if (/^\d+(:\d{1,2}){1,2}$/.test(v)) {
+    const p = v.split(":").map(Number);
+    return p.length === 2 ? p[0] * 60 + p[1] : p[0] * 3600 + p[1] * 60 + p[2];
+  }
+  const n = parseFloat(v.replace(",", "."));
+  if (!isNaN(n) && /^[\d.,]+$/.test(v)) return Math.round(n * 60);
+  return null;
+}
+function splitLine(line, d) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === d) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(x => x.trim());
+}
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+  if (!lines.length) return [];
+  const first = lines[0];
+  const d = ["\t", ";", ","].map(c => [c, first.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = [];
+  lines.forEach((line, i) => {
+    const cells = splitLine(line, d);
+    const name = cells[0];
+    if (!name) return;
+    const t = parseTime(cells[1]);
+    if (i === 0 && cells.length > 1 && cells[1] && t === null) return;   // riadok s nadpismi
+    rows.push({ n: name, t: t === null ? setup.def : t, p: cells[2] || "" });
+  });
+  return rows;
+}
+function showCsvMsg(text, ok) {
+  const m = $("csvMsg");
+  m.hidden = false; m.textContent = text; m.className = "csvMsg " + (ok ? "ok" : "err");
+}
+function loadCsvFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    if (text.includes("\uFFFD")) {   // Excel niekedy ukladá vo Windows-1250
+      const r2 = new FileReader();
+      r2.onload = () => applyCsv(r2.result);
+      r2.readAsText(file, "windows-1250");
+      return;
+    }
+    applyCsv(text);
+  };
+  reader.readAsText(file, "utf-8");
+}
+function applyCsv(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) { showCsvMsg("V súbore som nenašiel žiadne mená. Skontroluj, či je meno v prvom stĺpci.", false); return; }
+  setup.people = $("csvAppend").checked ? setup.people.concat(rows) : rows;
+  saveSetup(true); renderList();
+  showCsvMsg("Načítané mená: " + rows.length + ".", true);
+}
+$("csvInput").onchange = () => { loadCsvFile($("csvInput").files[0]); $("csvInput").value = ""; };
+const drop = $("drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); loadCsvFile(e.dataTransfer.files[0]); });
+
+/* ---------- Čo je práve na obrazovke ---------- */
+// state (zdieľaný): mode idle|run, idx, between, finished, startedAt (ms), adj (s)
+function currentView() {
+  if (state.mode !== "run") return { mode: "idle" };
+  if (state.finished) return { mode: "end" };
+  if (state.between) return { mode: "break", breakText: setup.breakText };
+  const p = setup.people[state.idx];
+  if (!p) return { mode: "idle" };
+  return { mode: "name", name: p.n, title: p.p || "", seconds: Math.max(0, p.t + (state.adj || 0)),
+           startedAt: state.startedAt, overText: setup.english ? "Time's up" : "Čas vypršal" };
+}
+const remainingOf = v => v.startedAt == null ? v.seconds : v.seconds - (Date.now() - v.startedAt) / 1000;
+function fmt(sec) {
+  const r = sec > 0 ? Math.ceil(sec) : Math.floor(sec), a = Math.abs(r);
+  return (r < 0 ? "−" : "") + pad(Math.floor(a / 60)) + ":" + pad(a % 60);
+}
+function clockNow() { const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+
+function paintScreen(scr, v) {
+  const q = sel => scr.querySelector(sel);
+  q(".v-idle").hidden = v.mode !== "idle";
+  q(".v-break").hidden = v.mode !== "break";
+  q(".v-person").hidden = v.mode !== "name";
+  q(".v-end").hidden = v.mode !== "end";
+  let over = false;
+  if (v.mode === "break") { q(".s-break").textContent = v.breakText || ""; q(".s-time").textContent = clockNow(); }
+  if (v.mode === "name") {
+    q(".s-title").textContent = v.title; q(".s-title").hidden = !v.title;
+    q(".s-name").textContent = v.name;
+    const rem = remainingOf(v);
+    over = v.startedAt != null && rem <= 0;
+    q(".s-clock").textContent = fmt(rem);
+    q(".s-status").textContent = over ? v.overText : "";
+  }
+  scr.classList.toggle("over", over);
+  return over;
+}
+
+/* ---------- Program a „nasleduje“ (autor aj divák) ---------- */
+function renderProgram(listEl, upEl) {
+  const run = state.mode === "run";
+  const idx = run ? state.idx : -1;
+  const people = setup.people;
+  const nextP = run && !state.finished ? people[idx + 1] : (run ? null : people[0]);
+  upEl.innerHTML = "";
+  if (!nextP) {
+    upEl.innerHTML = '<p class="muted">' + (run && state.finished ? "Program skončil." : (people.length ? "Toto je posledné meno." : "Program je prázdny.")) + "</p>";
+  } else {
+    const n = document.createElement("div"); n.className = "upName"; n.textContent = nextP.n;
+    const m = document.createElement("div"); m.className = "upMeta"; m.textContent = mmss(nextP.t) + (nextP.p ? " · " + nextP.p : "");
+    upEl.append(n, m);
+  }
+  listEl.innerHTML = "";
+  people.forEach((p, i) => {
+    const li = document.createElement("li");
+    if (run && !state.between && !state.finished && i === idx) li.className = "cur";
+    else if (run && (i <= idx || state.finished)) li.className = "done";
+    const t = document.createElement("span"); t.className = "t"; t.textContent = mmss(p.t);
+    const d = document.createElement("span"); d.className = "pn"; d.textContent = p.n;
+    if (p.p) { const pt = document.createElement("span"); pt.className = "pt"; pt.textContent = p.p; d.appendChild(pt); }
+    li.append(t, d);
+    listEl.appendChild(li);
+  });
+  const cur = listEl.querySelector(".cur");
+  if (cur) cur.scrollIntoView({ block: "nearest" });
+}
+
+/* ---------- Ovládanie (autor) ---------- */
+let actx = null, beepedKey = null;
+function beep() {
+  if (!actx) return;
+  const t0 = actx.currentTime;
+  for (let i = 0; i < 6; i++) {
+    const o = actx.createOscillator(), g = actx.createGain(), t = t0 + i * 0.35;
+    o.type = "sine"; o.frequency.value = i % 2 ? 660 : 880;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.4, t + 0.02); g.gain.linearRampToValueAtTime(0, t + 0.28);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.3);
+  }
+}
+function setState(n) {
+  state = n;
+  onStateChange();
+  write("state", n);
+}
+function canAct() { return isOp && !projector && !viewerFull && state.mode === "run"; }
+function next() {
+  if (!canAct()) return;
+  const s = state;
+  if (s.finished) { stop(); return; }
+  hist.push(Object.assign({}, s));
+  if (hist.length > 300) hist.shift();
+  const n = Object.assign({}, s);
+  if (s.between) { n.between = false; n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }
+  else if (s.startedAt == null) { n.startedAt = Date.now(); }
+  else if (s.idx + 1 < setup.people.length) { n.between = true; n.startedAt = null; }
+  else { n.finished = true; n.startedAt = null; }
+  setState(n);
+}
+function back() {
+  if (!canAct() || !hist.length) return;
+  setState(hist.pop());
+}
+function adjust(d) {
+  if (!canAct() || state.between || state.finished) return;
+  const p = setup.people[state.idx];
+  if (!p) return;
+  setState(Object.assign({}, state, { adj: Math.max(-p.t, (state.adj || 0) + d) }));
+  beepedKey = null;   // po predĺžení môže znova pípnuť
+}
+function startShow() {
+  if (!setup.people.length) return;
+  clearTimeout(setupTimer); write("setup", setup);
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+  hist = [];
+  setState({ mode: "run", idx: -1, between: true, finished: false, startedAt: null, adj: 0 });
+}
+function stop() { hist = []; setState({ mode: "idle" }); }
+
+function renderConsole() {
+  const s = state;
+  const nxt = setup.people[s.idx + 1];
+  let label;
+  if (s.finished) label = "Späť na zoznam";
+  else if (s.between) label = nxt ? "Zobraziť: " + nxt.n : "Ďalej";
+  else if (s.startedAt == null) label = "Spustiť odpočet";
+  else label = nxt ? "Ukončiť a prestávka" : "Ukončiť program";
+  $("nextBtn").textContent = label + "  ▶";
+  $("backBtn").disabled = !hist.length;
+  const canAdj = !s.finished && !s.between;
+  document.querySelectorAll(".adj").forEach(b => b.disabled = !canAdj);
+  const a = s.adj || 0;
+  $("adjInfo").textContent = canAdj && a ? "upravené o " + (a > 0 ? "+" : "−") + mmss(Math.abs(a)) : "";
+}
+
+$("startBtn").onclick = startShow;
+$("nextBtn").onclick = () => { $("nextBtn").blur(); next(); };
+$("backBtn").onclick = () => { $("backBtn").blur(); back(); };
+document.querySelectorAll(".adj").forEach(b => b.addEventListener("click", () => { b.blur(); adjust(parseInt(b.dataset.d)); }));
+$("cQuit").onclick = () => { $("cQuitAsk").hidden = false; $("cQuit").hidden = true; };
+$("cQuitNo").onclick = () => { $("cQuitAsk").hidden = true; $("cQuit").hidden = false; };
+$("cQuitYes").onclick = () => { $("cQuitAsk").hidden = true; $("cQuit").hidden = false; stop(); };
+document.addEventListener("keydown", e => {
+  if (!canAct()) return;
+  if (e.target.closest && e.target.closest("input, textarea")) return;
+  if (["Space", "Enter", "ArrowRight", "PageDown"].includes(e.code)) { e.preventDefault(); next(); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.code)) { e.preventDefault(); back(); }
+  else if (e.code === "ArrowUp") { e.preventDefault(); adjust(30); }
+  else if (e.code === "ArrowDown") { e.preventDefault(); adjust(-30); }
+  else if (e.key === "+" || e.code === "NumpadAdd" || e.code === "Equal") { e.preventDefault(); adjust(60); }
+  else if (e.key === "-" || e.code === "NumpadSubtract" || e.code === "Minus") { e.preventDefault(); adjust(-60); }
+});
+
+/* ---------- Celá obrazovka / projektor ---------- */
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && navigator.wakeLock && !wake) wake = await navigator.wakeLock.request("screen");
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch (e) { wake = null; }
+}
+function enterFull() { const el = document.documentElement; try { const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+function exitFull() { try { if (document.fullscreenElement || document.webkitFullscreenElement) { const p = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (p && p.catch) p.catch(() => {}); } } catch (e) {} }
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function openStage(asProjector) {
+  if (asProjector) projector = true; else viewerFull = true;
+  enterFull(); keepAwake(true);
+  render();
+}
+$("asProjector1").onclick = () => openStage(true);
+$("asProjector2").onclick = () => openStage(true);
+$("vFull").onclick = () => openStage(false);
+$("stage").addEventListener("click", e => { if (e.target.id !== "stageExit") { enterFull(); keepAwake(true); } });
+$("stageExit").onclick = () => {
+  if (route() === "projektor") history.replaceState(null, "", location.pathname + location.search);
+  projector = false; viewerFull = false; exitFull(); onStateChange();
+};
+document.addEventListener("fullscreenchange", () => render());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { wake = null; render(); } });
+
+/* ---------- Vykreslenie ---------- */
+function section() {
+  if (projector || viewerFull) return "stage";
+  if (route() === "ovladanie") {
+    if (!isOp) return "login";
+    return state.mode === "run" ? "console" : "setup";
+  }
+  return "viewer";
+}
+function onStateChange() {
+  if (!db) return;
+  render();
+  if (section() === "console") { renderConsole(); renderProgram($("prog"), $("upNext")); }
+  if (section() === "viewer") renderProgram($("vProg"), $("vUp"));
+}
+function render() {
+  if (!db) return;
+  const sec = section();
+  ["login", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
+  if (sec === "stage") $("stageHint").hidden = isFull();
+  tick();
+}
+function tick() {
+  if (!db) return;
+  const v = currentView();
+  const sec = section();
+  let over = false;
+  if (sec === "stage") over = paintScreen($("stageScreen"), v);
+  if (sec === "console") over = paintScreen($("preview"), v);
+  if (sec === "viewer") paintScreen($("vScreen"), v);
+  if (sec === "console" && over) {
+    const key = state.idx + ":" + state.startedAt + ":" + (state.adj || 0);
+    if (beepedKey !== key) { beepedKey = key; beep(); }
+  }
+  if (sec === "console" || sec === "stage") keepAwake(true);
+}
+setInterval(tick, 200);
+
+/* ---------- Pripojenie k databáze Supabase ---------- */
+function applySetupDoc(d) {
+  d = d || {};
+  setup = {
+    people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "" })) : [],
+    def: d.def || 180,
+    breakText: d.breakText ?? "Prestávka",
+    english: !!d.english
+  };
+}
+// Autor v ovládaní je zdrojom pravdy: ozveny vlastných zápisov ignoruje,
+// aby mu rýchle ťuknutia ani písanie neskákali späť.
+const isControlling = () => isOp && route() === "ovladanie" && !projector && !viewerFull;
+function applyRow(row) {
+  if (!row || !row.id) return;
+  const at = row.updated_at || "";
+  if (lastUpdated[row.id] && at && at < lastUpdated[row.id]) return;   // staršia verzia
+  if (isControlling()) return;
+  if (at) lastUpdated[row.id] = at;
+  if (row.id === "state") state = row.data && row.data.mode ? row.data : { mode: "idle" };
+  if (row.id === "setup") applySetupDoc(row.data);
+  onStateChange();
+}
+async function fetchAll() {
+  const res = await sb.from(TABLE).select("id,data,updated_at");
+  if (res.error) throw res.error;
+  return res.data || [];
+}
+function setPill(ok) {
+  const p = $("vPill");
+  p.textContent = ok ? "Naživo" : "Pripája sa…";
+  p.className = "pill" + (ok ? "" : " wait");
+}
+
+let realtimeOk = false;
+function startRealtime() {
+  sb.channel("odpocet-zmeny")
+    .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, payload => applyRow(payload.new))
+    .subscribe(status => {
+      realtimeOk = status === "SUBSCRIBED";
+      setPill(realtimeOk);
+      if (realtimeOk) refresh();   // po (opätovnom) pripojení načítaj aktuálny stav
+    });
+  // poistka, keby realtime spojenie vypadlo
+  setInterval(refresh, 10000);
+}
+async function refresh() {
+  if (isControlling()) return;
+  try { (await fetchAll()).forEach(applyRow); } catch (e) {}
+}
+
+function fillLinks() {
+  const base = location.origin + location.pathname;
+  $("linkViewer").textContent = base;
+  $("linkProjector").textContent = base + "#projektor";
+}
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", async () => {
+  const text = $(b.dataset.target).textContent;
+  try { await navigator.clipboard.writeText(text); b.textContent = "Skopírované"; }
+  catch (e) {
+    const range = document.createRange(); range.selectNodeContents($(b.dataset.target));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    b.textContent = "Označené, skopíruj";
+  }
+  setTimeout(() => { b.textContent = "Kopírovať"; }, 2000);
+}));
+
+async function enterControl() {
+  // po prihlásení: načítaj program aj stav (napr. po obnovení stránky počas programu)
+  try {
+    const rows = await fetchAll();
+    rows.forEach(r => {
+      if (r.updated_at) lastUpdated[r.id] = r.updated_at;
+      if (r.id === "setup") applySetupDoc(r.data);
+      if (r.id === "state") state = r.data && r.data.mode ? r.data : { mode: "idle" };
+    });
+  } catch (e) {
+    showSaveError("Program sa nepodarilo načítať: " + (e.message || "skontroluj pripojenie"));
+  }
+  fillLinks();
+  renderSetupFields();
+  onStateChange();
+}
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginErr").hidden = true;
+  $("loginBtn").disabled = true;
+  const res = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  $("loginBtn").disabled = false;
+  if (res.error) {
+    $("loginErr").textContent = "Prihlásenie sa nepodarilo. Skontroluj e-mail a heslo.";
+    $("loginErr").hidden = false;
+    return;
+  }
+  session = res.data.session; isOp = true;
+  await enterControl();
+});
+$("logoutBtn").onclick = async () => {
+  await sb.auth.signOut();
+  session = null; isOp = false;
+  render();
+};
+window.addEventListener("hashchange", () => {
+  projector = route() === "projektor";
+  if (route() === "ovladanie" && isOp) enterControl(); else { refresh(); onStateChange(); }
+});
+
+(async () => {
+  const ok = typeof SUPABASE_URL === "string" && SUPABASE_URL.startsWith("http") &&
+             typeof SUPABASE_KEY === "string" && SUPABASE_KEY.length > 20 && window.supabase;
+  $("loading").hidden = true;
+  if (!ok) {
+    $("noaccessText").textContent = window.supabase
+      ? "Chýba nastavenie pripojenia k databáze. Doplň SUPABASE_URL a SUPABASE_KEY na začiatku súboru index.html."
+      : "Nepodarilo sa načítať knižnicu Supabase. Skontroluj pripojenie na internet a obnov stránku.";
+    $("noaccess").hidden = false;
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  db = sb;
+  onStateChange();   // hneď ukáž stránku, dáta sa dočítajú
+  try {
+    const s = await sb.auth.getSession();
+    session = s.data ? s.data.session : null;
+  } catch (e) { session = null; }
+  isOp = !!session;
+  onStateChange();
+  startRealtime();
+  if (route() === "ovladanie" && isOp) await enterControl();
+  else await refresh();
+  onStateChange();
+})();
+</script>
+</body>
+</html>
