@@ -97,6 +97,9 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 .plabel{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .previewBox{aspect-ratio:16/9;width:100%;max-width:100%;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
 .navRow{display:grid;grid-template-columns:auto 1fr;gap:10px}
+.startRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:600px){.startRow{grid-template-columns:1fr}}
+button.alt{background:#1b2a4d;border-color:var(--accent-line)}
 button.next{font-size:22px;padding:20px}
 button.back{font-size:18px;padding:0 18px}
 .adjRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -212,7 +215,12 @@ button.back{font-size:18px;padding:0 18px}
     </div>
   </div>
 
-  <button class="primary" id="startBtn">ŠTART</button>
+  <div class="startRow">
+    <button class="primary" id="startBtn">ŠTART</button>
+    <button class="primary alt" id="startProjBtn">ŠTART s projektorom</button>
+  </div>
+  <p class="muted"><b>ŠTART s projektorom</b> otvorí druhé okno s časomierou: presuň ho na projektor alebo rozšírenú obrazovku a ťukni doň, zapne sa celá obrazovka. Ovládanie ostane tu.</p>
+  <p class="status" id="popupMsg" hidden></p>
   <p class="status" id="saveStatus" hidden></p>
 </div>
 
@@ -222,7 +230,7 @@ button.back{font-size:18px;padding:0 18px}
     <strong>Ovládanie</strong>
     <span class="pill" id="opPill">Naživo</span>
     <span class="grow"></span>
-    <button id="asProjector2">Táto obrazovka ako projektor</button>
+    <button id="openProjBtn">Otvoriť okno pre projektor</button>
     <button class="danger" id="cQuit">Ukončiť</button>
     <span id="cQuitAsk" hidden>Ukončiť program? <button class="danger" id="cQuitYes">Áno</button> <button id="cQuitNo">Nie</button></span>
   </div>
@@ -365,6 +373,7 @@ function renderStart() {
   const total = setup.people.reduce((a, p) => a + p.t, 0);
   $("startBtn").textContent = "ŠTART   ·   spolu " + mmss(total);
   $("startBtn").disabled = !setup.people.length;
+  $("startProjBtn").disabled = !setup.people.length;
 }
 function renderLang() {
   $("langSk").setAttribute("aria-pressed", String(!setup.english));
@@ -603,6 +612,19 @@ function renderConsole() {
 }
 
 $("startBtn").onclick = startShow;
+// otvorí druhé okno s časomierou (projektor); okno sa samo pripojí k databáze
+let projWin = null;
+function openProjectorWindow() {
+  if (projWin && !projWin.closed) { try { projWin.focus(); } catch (e) {} return true; }
+  projWin = window.open(location.origin + location.pathname + "#projektor", "iotimer-projektor", "popup=yes,width=1024,height=576");
+  return !!projWin;
+}
+$("startProjBtn").onclick = () => {
+  const ok = openProjectorWindow();
+  $("popupMsg").hidden = ok;
+  $("popupMsg").textContent = ok ? "" : "Prehliadač zablokoval nové okno. Povoľ vyskakovacie okná pre iotimer.github.io alebo otvor odkaz pre projektor ručne.";
+  startShow();
+};
 $("nextBtn").onclick = () => { $("nextBtn").blur(); next(); };
 $("backBtn").onclick = () => { $("backBtn").blur(); back(); };
 document.querySelectorAll(".adj").forEach(b => b.addEventListener("click", () => { b.blur(); adjust(parseInt(b.dataset.d)); }));
@@ -637,7 +659,7 @@ function openStage(asProjector) {
   render();
 }
 $("asProjector1").onclick = () => openStage(true);
-$("asProjector2").onclick = () => openStage(true);
+$("openProjBtn").onclick = () => { if (!openProjectorWindow()) showSaveError("Prehliadač zablokoval nové okno. Povoľ vyskakovacie okná pre iotimer.github.io."); };
 $("vFull").onclick = () => openStage(false);
 $("stage").addEventListener("click", e => { if (e.target.id !== "stageExit") { enterFull(); keepAwake(true); } });
 $("stageExit").onclick = () => {
