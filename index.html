@@ -491,7 +491,7 @@ function currentView() {
   if (state.between) return { mode: "break", breakText: setup.breakText };
   const p = setup.people[state.idx];
   if (!p) return { mode: "idle" };
-  return { mode: "name", name: p.n, title: p.p || "", seconds: Math.max(0, p.t + (state.adj || 0)),
+  return { mode: "name", name: p.n, title: p.p || "", base: p.t, seconds: Math.max(0, p.t + (state.adj || 0)),
            startedAt: state.startedAt, overText: setup.english ? "Time's up" : "Čas vypršal" };
 }
 const remainingOf = v => v.startedAt == null ? v.seconds : v.seconds - (Date.now() - v.startedAt) / 1000;
@@ -713,7 +713,10 @@ function paintProgramBar(v) {
     if (v.startedAt != null) {
       const rem = remainingOf(v);
       over = rem <= 0;
-      frac = v.seconds > 0 ? Math.min(1, Math.max(0, 1 - rem / v.seconds)) : 1;
+      // mierka = pôvodne naplánovaný čas (pri predĺžení celkový čas): skrátenie času posunie
+      // lištu dopredu, na konci času je lišta vždy presne na konci
+      const scale = Math.max(v.base || 0, v.seconds);
+      frac = scale > 0 ? Math.min(1, Math.max(0, 1 - rem / scale)) : 1;
       label = fmt(rem);
     }
     bar.style.transform = "scaleX(" + frac.toFixed(4) + ")";
