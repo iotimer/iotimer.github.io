@@ -112,11 +112,10 @@ button.back{font-size:18px;padding:0 18px}
 .prog li > span{position:relative}
 .prog li.cur{background:var(--accent-soft);outline:1px solid var(--accent-line)}
 /* priehľadná lišta pri aktuálnom mene: plní sa, ako ubieha čas */
-.prog li .bar{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(79,125,255,.28);pointer-events:none;transition:width .25s linear}
+.prog li .bar{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(79,125,255,.28);pointer-events:none}
 .prog li.over .bar{background:rgba(255,59,48,.32)}
 .prog li.cur .t{color:#fff;font-weight:700}
 .prog li.over .t{color:var(--red)}
-@media (prefers-reduced-motion:reduce){.prog li .bar{transition:none}}
 .prog li.done{opacity:.45}
 .prog .t{font-variant-numeric:tabular-nums;color:var(--muted)}
 .prog .pn{overflow-wrap:anywhere}
@@ -695,6 +694,7 @@ function onStateChange() {
   render();
   if (section() === "console") { renderConsole(); renderProgram($("prog"), $("upNext")); }
   if (section() === "viewer") renderProgram($("vProg"), $("vUp"));
+  paintProgramBar(currentView());   // lišta hneď na správnom mieste, bez skoku na začiatok
 }
 function render() {
   if (!db) return;
@@ -753,7 +753,7 @@ const isControlling = () => isOp && route() === "ovladanie" && !projector && !vi
 function applyRow(row) {
   if (!row || !row.id) return;
   const at = row.updated_at || "";
-  if (lastUpdated[row.id] && at && at < lastUpdated[row.id]) return;   // staršia verzia
+  if (lastUpdated[row.id] && at && at <= lastUpdated[row.id]) return;  // staršia alebo rovnaká verzia
   if (isControlling()) return;
   if (at) lastUpdated[row.id] = at;
   if (row.id === "state") state = row.data && row.data.mode ? row.data : { mode: "idle" };
