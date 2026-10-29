@@ -99,8 +99,10 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 .s-clock{display:inline-block;text-align:center}
 .s-title{font-size:2.8vw;font-size:min(2.8vw,3.6vh);font-size:min(2.8cqw,3.6cqh);font-weight:500;color:var(--muted);margin-bottom:1.5vh;margin-bottom:1.5cqh;max-width:90vw;max-width:90cqw;overflow-wrap:anywhere;line-height:1.3}
 .s-name{font-size:6vw;font-size:min(6vw,8vh);font-size:min(6cqw,8cqh);font-weight:600;margin-bottom:5vh;margin-bottom:5cqh;max-width:95vw;max-width:95cqw;overflow-wrap:anywhere}
-.s-clock{font-size:25vw;font-size:min(30vw,48vh);font-size:min(30cqw,48cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
+.s-clock{font-size:32vw;font-size:min(33vw,60vh);font-size:min(33cqw,60cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
 .screen.over .s-clock{color:var(--red)}
+/* záporný čas má o znak viac, nech sa zmestí na šírku */
+.s-clock.neg{font-size:26vw;font-size:min(27vw,60vh);font-size:min(27cqw,60cqh)}
 /* blikanie časomiery po vypršaní (dá sa zapnúť v nastavení) */
 .screen.over.blink .s-clock,.screen.over.blink .s-status{animation:iotBlink 1s steps(1,end) infinite}
 @keyframes iotBlink{50%{opacity:.12}}
@@ -553,7 +555,9 @@ function paintScreen(scr, v) {
     q(".s-name").textContent = v.name;
     const rem = remainingOf(v);
     over = v.startedAt != null && rem <= 0;
-    q(".s-clock").textContent = fmt(rem);
+    const ck = q(".s-clock"), ct = fmt(rem);
+    ck.textContent = ct;
+    ck.classList.toggle("neg", ct.length > 5);
     q(".s-status").textContent = over ? v.overText : "";
   }
   scr.classList.toggle("over", over);
