@@ -21,7 +21,21 @@
 const SUPABASE_URL = "https://ivtgpardcsbftfbqryrd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_6bqMX1xWR6KL4HM-NszHhg_YaBrY_OX";
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
+<!-- vlastná kópia knižnice supabase-js 2.112.4, upravená aj pre staršie prehliadače (Android) -->
+<script src="supabase.min.js"></script>
+<script>
+/* Ak sa stránka do 12 s nenačíta, ukáž dôvod (pre staré tablety a prehliadače) */
+setTimeout(function () {
+  var l = document.getElementById("loading");
+  if (!l || l.hidden) return;
+  var m = navigator.userAgent.match(/Chrome\/(\d+)/), v = m ? +m[1] : 0, d = new Date();
+  var t = "Stránka sa nespustila. ";
+  if (v && v < 58) t += "Prehliadač Chrome " + v + " je príliš starý, aktualizuj ho v Obchode Play. ";
+  else if (!window.supabase) t += "Nenačítala sa knižnica databázy, skontroluj internet. ";
+  t += "Skontroluj aj dátum a čas v zariadení (teraz ukazuje " + d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear() + " " + d.getHours() + ":" + ("0" + d.getMinutes()).slice(-2) + ").";
+  var p = l.getElementsByTagName("p")[0]; if (p) p.textContent = t;
+}, 12000);
+</script>
 <style>
 /* Layout: divák (bez prihlásenia) = časomiera + program; #ovladanie = prihlásenie a ovládanie; #projektor = len časomiera; autor = nastavenie programu, potom ovládací panel s náhľadom; divák cez odkaz = bežiaca časomiera + program; #projektor = len časomiera na celú obrazovku */
 :root{
@@ -783,7 +797,7 @@ function applySetupDoc(d) {
   setup = {
     people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "" })) : [],
     def: d.def || 180,
-    breakText: d.breakText ?? "Prestávka",
+    breakText: d.breakText != null ? d.breakText : "Prestávka",
     english: !!d.english,
     blink: !!d.blink
   };
@@ -823,6 +837,19 @@ function startRealtime() {
     });
   // poistka, keby realtime spojenie vypadlo
   setInterval(refresh, 10000);
+}
+let liteOk = false;
+function liteClient() {
+  return { from: () => ({ select: cols => new Promise(resolve => {
+    const x = new XMLHttpRequest();
+    x.open("GET", SUPABASE_URL + "/rest/v1/" + TABLE + "?select=" + encodeURIComponent(cols));
+    x.setRequestHeader("apikey", SUPABASE_KEY);
+    x.setRequestHeader("Authorization", "Bearer " + SUPABASE_KEY);
+    x.timeout = 8000;
+    x.onload = () => { liteOk = x.status === 200; try { resolve(liteOk ? { data: JSON.parse(x.responseText) } : { error: { message: "HTTP " + x.status } }); } catch (e) { resolve({ error: e }); } };
+    x.onerror = x.ontimeout = () => { liteOk = false; resolve({ error: { message: "sieť" } }); };
+    x.send();
+  }) }) };
 }
 async function refresh() {
   if (isControlling()) return;
@@ -887,8 +914,22 @@ window.addEventListener("hashchange", () => {
 });
 
 (async () => {
-  const ok = typeof SUPABASE_URL === "string" && SUPABASE_URL.startsWith("http") &&
-             typeof SUPABASE_KEY === "string" && SUPABASE_KEY.length > 20 && window.supabase;
+  const cfgOk = typeof SUPABASE_URL === "string" && SUPABASE_URL.startsWith("http") &&
+             typeof SUPABASE_KEY === "string" && SUPABASE_KEY.length > 20;
+  // náhradné čítanie bez knižnice (staré prehliadače): iba pre divákov a projektor
+  if (cfgOk && route() !== "ovladanie") {
+    let lib = null;
+    try { lib = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null; } catch (e) { lib = null; }
+    if (!lib) {
+      $("loading").hidden = true;
+      sb = db = liteClient();
+      onStateChange();
+      const poll = () => refresh().then(() => setPill(liteOk));
+      poll(); setInterval(poll, 2000);
+      return;
+    }
+  }
+  const ok = cfgOk && window.supabase;
   $("loading").hidden = true;
   if (!ok) {
     $("noaccessText").textContent = window.supabase
