@@ -3,7 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Odpočet naživo</title>
+<title>ioTimer – odpočet naživo</title>
+<!-- iPhone/iPad: po „Pridať na plochu“ sa otvára na celú obrazovku bez lišty Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ioTimer">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
 <script>
 /* =========================================================
    NASTAVENIE: sem vlož údaje zo Supabase
@@ -681,7 +690,10 @@ async function keepAwake(on) {
 }
 function enterFull() { const el = document.documentElement; try { const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
 function exitFull() { try { if (document.fullscreenElement || document.webkitFullscreenElement) { const p = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (p && p.catch) p.catch(() => {}); } } catch (e) {} }
-const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+// spustené z ikony na ploche (iPhone/iPad) sa ráta ako celá obrazovka
+const isStandalone = () => window.navigator.standalone === true ||
+  (window.matchMedia && (matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches));
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
 function openStage(asProjector) {
   if (asProjector) projector = true; else viewerFull = true;
   enterFull(); keepAwake(true);
@@ -718,7 +730,14 @@ function render() {
   if (!db) return;
   const sec = section();
   ["login", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
-  if (sec === "stage") $("stageHint").hidden = isFull();
+  if (sec === "stage") {
+    $("stageHint").hidden = isFull();
+    // iPhone nevie zapnúť celú obrazovku z webu: poradí, ako na to
+    const el = document.documentElement;
+    const canFull = !!(el.requestFullscreen || el.webkitRequestFullscreen);
+    $("stageHint").textContent = canFull ? "Ťukni sem pre celú obrazovku"
+      : "Celá obrazovka na iPhone: Zdieľať → Pridať na plochu a otvor ioTimer z ikony";
+  }
   tick();
 }
 // lišta a zostávajúci čas pri aktuálnom mene v programe
