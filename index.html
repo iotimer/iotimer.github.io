@@ -70,6 +70,10 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 /* obrazovka s časomierou: písmo sa riadi veľkosťou rámu, takže rovnako vyzerá na projektore aj v náhľade */
 .screen{container-type:size;width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;background:#000;color:#fff;padding:2cqh 2cqw;user-select:none;-webkit-user-select:none;overflow:hidden}
 .screen.over{background:var(--over)}
+/* bloky na celú šírku: meno a názov sa zalamujú podľa obrazovky, nie podľa šírky čísel, takže sa pri odpočte nehýbu */
+.v-idle,.v-break,.v-person,.v-end{width:100%;display:flex;flex-direction:column;align-items:center}
+.s-title,.s-name{width:100%;text-align:center}
+.s-clock{display:inline-block;text-align:center}
 .s-title{font-size:min(2.8cqw,3.6cqh);font-weight:500;color:var(--muted);margin-bottom:1.5cqh;max-width:90cqw;overflow-wrap:anywhere;line-height:1.3}
 .s-name{font-size:min(6cqw,8cqh);font-weight:600;margin-bottom:5cqh;max-width:95cqw;overflow-wrap:anywhere}
 .s-clock{font-size:min(30cqw,48cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
