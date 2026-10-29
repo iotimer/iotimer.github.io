@@ -78,6 +78,11 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 .s-name{font-size:min(6cqw,8cqh);font-weight:600;margin-bottom:5cqh;max-width:95cqw;overflow-wrap:anywhere}
 .s-clock{font-size:min(30cqw,48cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
 .screen.over .s-clock{color:var(--red)}
+/* blikanie časomiery po vypršaní (dá sa zapnúť v nastavení) */
+.screen.over.blink .s-clock,.screen.over.blink .s-status{animation:iotBlink 1s steps(1,end) infinite}
+@keyframes iotBlink{50%{opacity:.12}}
+.blinkRow{display:flex;gap:10px;align-items:center}
+.blinkRow input{width:20px;height:20px;accent-color:var(--accent)}
 .s-status{font-size:min(4.5cqw,6cqh);font-weight:600;color:var(--red);min-height:1.3em}
 .s-break{font-size:min(7cqw,10cqh);font-weight:600;max-width:95cqw;overflow-wrap:anywhere}
 .s-time{font-size:min(20cqw,30cqh);font-weight:800;color:#b3b3b3;font-variant-numeric:tabular-nums;margin-top:4cqh}
@@ -216,6 +221,7 @@ button.back{font-size:18px;padding:0 18px}
       <button id="langSk" aria-pressed="true">Čas vypršal</button>
       <button id="langEn" aria-pressed="false">Time's up</button>
     </div>
+    <label class="blinkRow"><input type="checkbox" id="blinkSetup"> Blikať časomierou, keď čas vyprší a beží do mínusu</label>
   </div>
 
   <div class="card">
@@ -260,6 +266,7 @@ button.back{font-size:18px;padding:0 18px}
         <button class="adj" data-d="60">+1 min</button>
         <span class="adjInfo" id="adjInfo"></span>
       </div>
+      <label class="blinkRow"><input type="checkbox" id="blinkConsole"> Blikať časomierou po vypršaní času</label>
       <p class="muted">Klávesy: medzerník, Enter alebo šípka doprava = ďalej, šípka doľava = späť, šípka hore/dole = ±30 s, + / − = ±1 min. Prezentačný ovládač funguje tiež.</p>
       <p class="status" id="saveStatus2" hidden></p>
     </div>
@@ -313,7 +320,7 @@ const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.m
 
 const TABLE = "odpocet";
 let sb = null, db = null, isOp = false, session = null;
-let setup = { people: [], def: 180, breakText: "Prestávka", english: false };
+let setup = { people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
 let state = { mode: "idle" };
 let hist = [];                                     // kroky na vrátenie (len u autora)
 const route = () => location.hash.replace("#", ""); // "", "ovladanie", "projektor"
@@ -388,6 +395,8 @@ function renderStart() {
 function renderLang() {
   $("langSk").setAttribute("aria-pressed", String(!setup.english));
   $("langEn").setAttribute("aria-pressed", String(!!setup.english));
+  $("blinkSetup").checked = !!setup.blink;
+  $("blinkConsole").checked = !!setup.blink;
 }
 function renderSetupFields() {
   $("defMin").value = Math.floor(setup.def / 60);
@@ -405,6 +414,9 @@ $("applyAll").onclick = () => { setup.people.forEach(p => p.t = setup.def); save
 $("breakText").oninput = () => { setup.breakText = $("breakText").value; saveSetup(); };
 $("langSk").onclick = () => { setup.english = false; saveSetup(true); renderLang(); };
 $("langEn").onclick = () => { setup.english = true; saveSetup(true); renderLang(); };
+["blinkSetup", "blinkConsole"].forEach(id => $(id).addEventListener("change", () => {
+  setup.blink = $(id).checked; saveSetup(true); renderLang(); $(id).blur();
+}));
 $("clearBtn").onclick = () => { $("clearAsk").hidden = false; };
 $("clearNo").onclick = () => { $("clearAsk").hidden = true; };
 $("clearYes").onclick = () => { setup.people = []; saveSetup(true); renderList(); $("clearAsk").hidden = true; };
@@ -496,7 +508,7 @@ function currentView() {
   const p = setup.people[state.idx];
   if (!p) return { mode: "idle" };
   return { mode: "name", name: p.n, title: p.p || "", base: p.t, seconds: Math.max(0, p.t + (state.adj || 0)),
-           startedAt: state.startedAt, overText: setup.english ? "Time's up" : "Čas vypršal" };
+           startedAt: state.startedAt, overText: setup.english ? "Time's up" : "Čas vypršal", blink: !!setup.blink };
 }
 const remainingOf = v => v.startedAt == null ? v.seconds : v.seconds - (Date.now() - v.startedAt) / 1000;
 function fmt(sec) {
@@ -522,6 +534,7 @@ function paintScreen(scr, v) {
     q(".s-status").textContent = over ? v.overText : "";
   }
   scr.classList.toggle("over", over);
+  scr.classList.toggle("blink", over && !!v.blink);
   return over;
 }
 
@@ -752,7 +765,8 @@ function applySetupDoc(d) {
     people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "" })) : [],
     def: d.def || 180,
     breakText: d.breakText ?? "Prestávka",
-    english: !!d.english
+    english: !!d.english,
+    blink: !!d.blink
   };
 }
 // Autor v ovládaní je zdrojom pravdy: ozveny vlastných zápisov ignoruje,
