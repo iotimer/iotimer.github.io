@@ -212,8 +212,9 @@ button.back{font-size:18px;padding:0 18px}
 <!-- AUTOR: nastavenie programu -->
 <div class="wrap" id="setup" hidden>
   <h1>Odpočet naživo</h1>
+  <div id="sEvSlot"></div>
 
-  <div class="card">
+  <div class="card" id="evCard">
     <h2>Akcia</h2>
     <div class="row">
       <input id="evName" class="grow" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
@@ -308,10 +309,12 @@ button.back{font-size:18px;padding:0 18px}
     <strong>Ovládanie<span id="cEvName" class="muted" style="font-weight:600"></span></strong>
     <span class="pill" id="opPill">Naživo</span>
     <span class="grow"></span>
+    <button id="cEvBtn">Akcie ▾</button>
     <button id="openProjBtn">Otvoriť okno pre projektor</button>
     <button class="danger" id="cQuit">Ukončiť</button>
     <span id="cQuitAsk" hidden>Ukončiť program? <button class="danger" id="cQuitYes">Áno</button> <button id="cQuitNo">Nie</button></span>
   </div>
+  <div id="cEvSlot" hidden></div>
   <div class="cgrid">
     <div class="cleft">
       <div class="plabel">Čo vidia ostatní</div>
@@ -878,6 +881,9 @@ function render() {
   if (!db) return;
   const sec = section();
   ["login", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
+  // karta Akcia: v nastavení hore, v ovládaní pod tlačidlom „Akcie“
+  const evSlot = sec === "console" ? $("cEvSlot") : $("sEvSlot");
+  if ($("evCard").parentNode !== evSlot) evSlot.appendChild($("evCard"));
   // len časomiera: bez posuvnej lišty vpravo
   document.documentElement.classList.toggle("stageOn", sec === "stage");
   document.documentElement.style.overflow = sec === "stage" ? "hidden" : "";
@@ -1098,6 +1104,12 @@ async function createEvent() {
   location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
 }
 $("newEvBtn").onclick = createEvent;
+$("cEvBtn").onclick = () => {
+  const sl = $("cEvSlot");
+  sl.hidden = !sl.hidden;
+  $("cEvBtn").textContent = sl.hidden ? "Akcie ▾" : "Akcie ▴";
+  if (!sl.hidden) loadEvents();
+};
 $("newEvName").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
 
 $("loginForm").addEventListener("submit", async e => {
@@ -1164,6 +1176,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 f</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 g</div>
 </body>
 </html>
