@@ -191,6 +191,14 @@ button.back{font-size:18px;padding:0 18px}
 .prog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:56vh;overflow:auto}
 .prog li{display:block;position:relative;overflow:hidden;border-radius:8px;flex-shrink:0}
 .prog .rowg{position:relative;display:grid;grid-template-columns:62px 1fr;gap:8px;padding:8px 10px}
+.prog.plan .rowg{grid-template-columns:66px 50px 1fr}
+.prog .at{font-variant-numeric:tabular-nums;color:#c9ced6;font-weight:600}
+.prog .at.late{color:#ffb340}
+.delayPill{font-size:14px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-weight:600;white-space:nowrap}
+.delayPill.ok{color:#34c759;border-color:rgba(52,199,89,.5)}
+.delayPill.late{color:#ffb340;border-color:rgba(255,179,64,.55)}
+.delayPill.early{color:#7aa2ff;border-color:var(--accent-line)}
+.planInfo{margin:8px 0 0}
 .prog li.cur{background:var(--accent-soft);outline:1px solid var(--accent-line)}
 /* priehľadná lišta pri aktuálnom mene: plní sa, ako ubieha čas */
 .prog li .bar{position:absolute;top:0;right:0;bottom:0;left:0;transform-origin:0 50%;transform:scaleX(0);background:rgba(79,125,255,.30);pointer-events:none}
@@ -313,6 +321,15 @@ button.back{font-size:18px;padding:0 18px}
   </div>
 
   <div class="card">
+    <h2>Začiatok akcie (plán)</h2>
+    <div class="row">
+      <input id="startAt" type="time" aria-label="Čas začiatku akcie" style="width:8em">
+      <button id="startAtClear">Bez plánu</button>
+    </div>
+    <p class="muted planInfo" id="planInfo">Keď zadáš čas začiatku, program dopočíta, kedy má kto začať, a počas akcie ukáže meškanie oproti plánu. Diváci uvidia v programe približné časy.</p>
+  </div>
+
+  <div class="card">
     <h2>Predvolený čas pre nové mená</h2>
     <div class="row">
       <input id="defMin" type="number" min="0" max="999" aria-label="Minúty"> min
@@ -358,6 +375,7 @@ button.back{font-size:18px;padding:0 18px}
   <div class="cbar">
     <strong>Ovládanie<span id="cEvName" class="muted" style="font-weight:600"></span></strong>
     <span class="pill" id="opPill">Naživo</span>
+    <span class="delayPill" id="delayPill" hidden></span>
     <span class="grow"></span>
     <button id="cEvBtn">← Akcie</button>
     <button id="openProjBtn">Otvoriť okno pre projektor</button>
@@ -516,8 +534,8 @@ function renderList() {
       bI.checked = p.b !== false;
       box.classList.toggle("on", bI.checked);
       bM.value = p.bt ? Math.round(p.bt / 60) : "";
-      bI.onchange = () => { p.b = bI.checked; box.classList.toggle("on", bI.checked); saveSetup(true); };
-      bM.oninput = () => { const m = Math.max(0, Math.min(240, parseInt(bM.value, 10) || 0)); p.bt = m * 60; saveSetup(); };
+      bI.onchange = () => { p.b = bI.checked; box.classList.toggle("on", bI.checked); saveSetup(true); renderStart(); };
+      bM.oninput = () => { const m = Math.max(0, Math.min(240, parseInt(bM.value, 10) || 0)); p.bt = m * 60; saveSetup(); renderStart(); };
     }
     const [up, down, del] = row.querySelectorAll("button");
     up.onclick = () => { [people[i - 1], people[i]] = [people[i], people[i - 1]]; saveSetup(true); renderList(); };
@@ -583,6 +601,9 @@ function enableDrag(L, onDrop) {
 
 function renderStart() {
   const total = setup.people.reduce((a, p) => a + p.t, 0);
+  const pe = planEnd();
+  $("planInfo").textContent = pe ? "Začiatok o " + setup.startAt + ", koniec podľa plánu o " + hhmm(pe) + " (vrátane prestávok s odpočtom). Počas akcie uvidíš meškanie oproti plánu a diváci približné časy."
+    : "Keď zadáš čas začiatku, program dopočíta, kedy má kto začať, a počas akcie ukáže meškanie oproti plánu. Diváci uvidia v programe približné časy.";
   $("startBtn").textContent = "ŠTART   ·   spolu " + mmss(total);
   $("startBtn").disabled = !setup.people.length;
   $("startProjBtn").disabled = !setup.people.length;
@@ -594,6 +615,7 @@ function renderLang() {
   $("blinkConsole").checked = !!setup.blink;
 }
 function renderSetupFields() {
+  $("startAt").value = setup.startAt || "";
   $("evName").value = setup.name || (EV ? EV : "");
   $("evHost").textContent = location.host + "/";
   $("evSlug").value = EV;
@@ -613,6 +635,8 @@ $("addBtn").onclick = () => { addName($("newName").value); $("newName").value = 
 $("newName").onkeydown = e => { if (e.key === "Enter") $("addBtn").click(); };
 $("defMin").oninput = $("defSec").oninput = () => { setup.def = toSec($("defMin").value, $("defSec").value); saveSetup(); };
 $("applyAll").onclick = () => { setup.people.forEach(p => p.t = setup.def); saveSetup(true); renderList(); };
+$("startAt").onchange = () => { setup.startAt = $("startAt").value || ""; saveSetup(true); renderStart(); };
+$("startAtClear").onclick = () => { setup.startAt = ""; $("startAt").value = ""; saveSetup(true); renderStart(); };
 $("breakText").oninput = () => { setup.breakText = $("breakText").value; saveSetup(); };
 $("langSk").onclick = () => { setup.english = false; saveSetup(true); renderLang(); };
 $("langEn").onclick = () => { setup.english = true; saveSetup(true); renderLang(); };
@@ -771,6 +795,70 @@ function paintScreen(scr, v) {
 }
 
 /* ---------- Program a „nasleduje“ (autor aj divák) ---------- */
+/* ---------- Plán a meškanie ---------- */
+const hhmm = ms => { const d = new Date(ms + 30000); return d.getHours() + ":" + pad(d.getMinutes()); };
+// plánované začiatky rečníkov (ms) podľa času začiatku, dĺžok a prestávok s odpočtom
+function planStarts() {
+  if (!setup.startAt) return null;
+  const [h, m] = setup.startAt.split(":").map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  let t = d.getTime();
+  return setup.people.map(p => { const st = t; t += p.t * 1000 + (p.b !== false && p.bt ? p.bt * 1000 : 0); return st; });
+}
+function planEnd() {
+  const ps = planStarts();
+  if (!ps || !ps.length) return null;
+  const last = setup.people[setup.people.length - 1];
+  return ps[ps.length - 1] + last.t * 1000;
+}
+// meškanie v sekundách (kladné = meškáme); null = bez plánu alebo po skončení
+function delayNow() {
+  const ps = planStarts();
+  if (!ps || !ps.length || state.mode !== "run" || state.finished) return null;
+  const now = Date.now(), s = state, P = setup.people;
+  if (s.between && s.idx < 0) return (now - ps[0]) / 1000;              // pred prvým rečníkom
+  if (s.between) {
+    const plannedEnd = ps[s.idx + 1];
+    if (plannedEnd == null) return null;
+    const be = s.breakAt && s.breakSec ? s.breakAt + (s.breakSec + (s.adj || 0)) * 1000 : now;
+    return (Math.max(be, now) - plannedEnd) / 1000;
+  }
+  const p = P[s.idx]; if (!p) return null;
+  const plannedEnd = ps[s.idx] + p.t * 1000, dur = (p.t + (s.adj || 0)) * 1000;
+  const projEnd = s.startedAt == null ? now + dur : Math.max(s.startedAt + dur, now);
+  return (projEnd - plannedEnd) / 1000;
+}
+function delayText(d) {
+  if (d == null) return "";
+  if (state.between && state.idx < 0 && d < 0) return "Začiatok o " + setup.startAt + " (o " + Math.ceil(-d / 60) + " min)";
+  const m = Math.round(Math.abs(d) / 60);
+  if (m < 1) return "Podľa plánu";
+  return d > 0 ? "Meškáme " + m + " min" : "Náskok " + m + " min";
+}
+function paintDelay() {
+  const el = $("delayPill"), d = delayNow();
+  el.hidden = d == null;
+  if (d == null) return;
+  const m = Math.round(Math.abs(d) / 60);
+  el.textContent = delayText(d);
+  el.className = "delayPill " + (state.between && state.idx < 0 && d < 0 ? "" : m < 1 ? "ok" : d > 0 ? "late" : "early");
+}
+// odhadovaný začiatok rečníka i (pri meškaní posunutý, dopredu sa neposúva)
+function estStart(i, ps, d) {
+  const run = state.mode === "run";
+  const shift = run && d != null && d > 0 && (i > state.idx || (i === state.idx && (state.between || state.startedAt == null))) ? d * 1000 : 0;
+  return { at: ps[i] + shift, late: shift >= 60000 };
+}
+function paintPlanTimes() {
+  const ps = planStarts(), d = delayNow();
+  document.querySelectorAll(".prog li[data-i]").forEach(li => {
+    const at = li.querySelector(".at"); if (!at || !ps) return;
+    const i = +li.dataset.i, e = estStart(i, ps, d);
+    if (state.mode === "run" && i === state.idx && state.startedAt != null && !state.between) { at.textContent = hhmm(state.startedAt); at.className = "at"; return; }
+    at.textContent = (e.late ? "≈" : "") + hhmm(e.at);
+    at.className = "at" + (e.late ? " late" : "");
+  });
+}
 function renderProgram(listEl, upEl) {
   const run = state.mode === "run";
   const idx = run ? state.idx : -1;
@@ -781,14 +869,19 @@ function renderProgram(listEl, upEl) {
     upEl.innerHTML = '<p class="muted">' + (run && state.finished ? "Program skončil." : (people.length ? "Toto je posledné meno." : "Program je prázdny.")) + "</p>";
   } else {
     const n = document.createElement("div"); n.className = "upName"; n.textContent = nextP.n;
-    const m = document.createElement("div"); m.className = "upMeta"; m.textContent = mmss(nextP.t) + (nextP.p ? " · " + nextP.p : "");
+    const ps = planStarts(), ni = setup.people.indexOf(nextP);
+    const when = ps && ni >= 0 ? (() => { const e = estStart(ni, ps, delayNow()); return (e.late ? "≈" : "o ") + hhmm(e.at) + " · "; })() : "";
+    const m = document.createElement("div"); m.className = "upMeta"; m.textContent = when + mmss(nextP.t) + (nextP.p ? " · " + nextP.p : "");
     upEl.append(n, m);
   }
   const keepTop = listEl.scrollTop, pageX = window.scrollX, pageY = window.scrollY;
   listEl.style.minHeight = listEl.offsetHeight + "px";   // pri prestavbe zoznamu sa stránka nezmrští
   listEl.innerHTML = "";
+  const hasPlan = !!planStarts();
+  listEl.classList.toggle("plan", hasPlan);
   people.forEach((p, i) => {
     const li = document.createElement("li");
+    li.dataset.i = i;
     if (run && !state.between && !state.finished && i === idx) li.className = "cur";
     else if (run && (i <= idx || state.finished)) li.className = "done";
     const t = document.createElement("span"); t.className = "t"; t.textContent = mmss(p.t);
@@ -799,6 +892,7 @@ function renderProgram(listEl, upEl) {
       li.appendChild(bar);
     }
     const rowg = document.createElement("div"); rowg.className = "rowg";
+    if (hasPlan) { const at = document.createElement("span"); at.className = "at"; rowg.append(at); }
     rowg.append(t, d);
     li.appendChild(rowg);
     listEl.appendChild(li);
@@ -813,6 +907,7 @@ function renderProgram(listEl, upEl) {
     else if (cr.bottom > lr.bottom) listEl.scrollTop += cr.bottom - lr.bottom;
   }
   window.scrollTo(pageX, pageY);
+  paintPlanTimes();
 }
 
 /* ---------- Ovládanie (autor) ---------- */
@@ -1014,8 +1109,11 @@ function paintProgramBar(v) {
     li.classList.toggle("over", over);
   });
 }
+let planTick = 0;
 function tick() {
   if (!db) return;
+  if (section() === "console") paintDelay();
+  if (++planTick % 10 === 0 && (section() === "console" || section() === "viewer")) paintPlanTimes();
   const v = currentView();
   const sec = section();
   let over = false;
@@ -1043,6 +1141,7 @@ function applySetupDoc(d) {
   setup = {
     people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "", b: p.b !== false, bt: p.bt || 0 })) : [],
     name: d.name || "",
+    startAt: /^\d{1,2}:\d{2}$/.test(d.startAt || "") ? d.startAt : "",
     def: d.def || 180,
     breakText: d.breakText != null ? d.breakText : "Prestávka",
     english: !!d.english,
@@ -1462,6 +1561,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 m</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 n</div>
 </body>
 </html>
