@@ -135,6 +135,17 @@ html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
 .slugBox{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;padding:0 0 0 10px;background:#0d0f13;max-width:100%}
 .slugBox span{color:var(--muted);white-space:nowrap}
 .slugBox input{border:0;background:transparent;padding:10px 10px 10px 0;min-width:0;width:12em;outline:none}
+.evActs{display:flex;gap:14px;margin-top:4px}
+.evActs button{background:none;border:0;padding:2px 0;font-size:14px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.evActs button:hover{color:var(--fg)}
+.evActs button.del{color:#ff8a80}
+.evAsk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:14px;color:#ff8a80}
+.evAsk button{font-size:14px;padding:6px 12px}
+.copyNote{display:flex;gap:10px;align-items:center;margin:0 0 10px;padding:8px 12px;border-radius:10px;background:rgba(79,125,255,.12);border:1px solid var(--accent-line);font-size:15px}
+.copyNote span{flex:1}
+#evTrash{margin-top:14px}
+#evTrash summary{cursor:pointer;color:var(--muted)}
+#evTrash li{opacity:.7}
 .evTop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 .evTop h1{margin:0;flex:1}
 .evList li.cur{border-color:var(--accent-line);background:rgba(79,125,255,.12)}
@@ -222,7 +233,8 @@ button.back{font-size:18px;padding:0 18px}
 <div class="wrap" id="events" hidden>
   <div class="evTop"><h1>Akcie</h1><button id="logoutBtn2">Odhlásiť sa</button></div>
   <div class="card">
-    <h2>Nová akcia</h2>
+    <h2 id="newEvTitle">Nová akcia</h2>
+    <div class="copyNote" id="copyNote" hidden><span id="copyNoteText"></span><button id="copyCancel">Zrušiť</button></div>
     <div class="row">
       <input id="newEvName" class="grow" type="text" placeholder="Názov akcie, napr. Konferencia JARDIN 2026" aria-label="Názov novej akcie">
     </div>
@@ -238,6 +250,7 @@ button.back{font-size:18px;padding:0 18px}
     <h2>Moje akcie</h2>
     <ul class="evList" id="evList"></ul>
     <p class="muted" id="evEmpty" hidden>Zatiaľ žiadna akcia. Vytvor prvú vyššie.</p>
+    <details id="evTrash" hidden><summary id="evTrashSum">Zmazané akcie</summary><ul class="evList" id="evTrashList" style="margin-top:10px"></ul></details>
   </div>
 </div>
 
@@ -985,6 +998,8 @@ setInterval(tick, 200);
 /* ---------- Pripojenie k databáze Supabase ---------- */
 function applySetupDoc(d) {
   d = d || {};
+  setupDeleted = !!d.deleted;
+  if (d.deleted) d = { name: (d.name || "Akcia") + " (zmazaná)", people: [], breakText: "" };
   if (d.movedTo && EV && cleanSlug(d.movedTo) && cleanSlug(d.movedTo) !== EV) {
     location.replace(evUrl(cleanSlug(d.movedTo), route()));
     return;
@@ -1088,6 +1103,7 @@ async function enterControl() {
   } catch (e) {
     showSaveError("Program sa nepodarilo načítať: " + (e.message || "skontroluj pripojenie"));
   }
+  if (setupDeleted) { location.replace(homeUrl()); return; }   // zmazaná akcia: späť na zoznam (dá sa obnoviť z koša)
   fillLinks();
   renderSetupFields();
   onStateChange();
@@ -1097,7 +1113,8 @@ async function enterControl() {
 /* ---------- Viac akcií ---------- */
 const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
-let events = [], allSlugs = new Set();
+let setupDeleted = false;
+let events = [], trash = [], allSlugs = new Set(), copyFrom = null, askDel = null;
 async function loadEvents() {
   $("evErr").hidden = true;
   try {
@@ -1111,14 +1128,16 @@ async function loadEvents() {
       run[slug] = !!(r.data && r.data.mode === "run");
       at[slug] = r.updated_at || "";
     });
-    events = rows.filter(r => (r.id === "setup" || r.id.startsWith("setup:")) && !(r.data && r.data.movedTo)).map(r => {
+    const all = rows.filter(r => (r.id === "setup" || r.id.startsWith("setup:")) && !(r.data && r.data.movedTo)).map(r => {
       const slug = r.id === "setup" ? "" : r.id.slice(6);
       const d = r.data || {};
       const last = [r.updated_at || "", at[slug] || ""].sort().pop();
-      return { slug, name: d.name || (slug || "Hlavná akcia"), run: !!run[slug],
+      return { slug, name: d.name || (slug || "Hlavná akcia"), run: !!run[slug], deleted: !!d.deleted, doc: d,
                count: Array.isArray(d.people) ? d.people.length : 0, at: last };
     });
-    events.sort((a, b) => (b.run - a.run) || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0));
+    all.sort((a, b) => (b.run - a.run) || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0));
+    events = all.filter(e => !e.deleted);
+    trash = all.filter(e => e.deleted);
   } catch (e) { $("evErr").textContent = "Zoznam akcií sa nepodarilo načítať. Obnov stránku."; $("evErr").hidden = false; }
   renderEvents();
 }
@@ -1126,6 +1145,9 @@ function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   return isNaN(d) ? "" : d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear();
+}
+function evCountText(ev) {
+  return ev.count + (ev.count === 1 ? " rečník" : ev.count >= 2 && ev.count <= 4 ? " rečníci" : " rečníkov");
 }
 function renderEvents() {
   const L = $("evList");
@@ -1136,17 +1158,93 @@ function renderEvents() {
     const meta = document.createElement("div"); meta.className = "meta";
     const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = ev.name;
     const st = document.createElement("span"); st.className = "st" + (ev.run ? " run" : "");
-    st.textContent = (ev.run ? "● beží · " : "") + ev.count + (ev.count === 1 ? " rečník" : ev.count >= 2 && ev.count <= 4 ? " rečníci" : " rečníkov") +
+    st.textContent = (ev.run ? "● beží · " : "") + evCountText(ev) + " · " + shortUrl(evUrl(ev.slug, "")) +
       (ev.at ? " · upravené " + fmtDate(ev.at) : "");
-    meta.append(nm, st);
+    const acts = document.createElement("div"); acts.className = "evActs";
+    const cp = document.createElement("button"); cp.textContent = "Kopírovať";
+    cp.title = "Nová akcia s rovnakým programom a nastavením";
+    cp.onclick = e => { e.stopPropagation(); startCopy(ev); };
+    acts.append(cp);
+    if (ev.slug) {   // hlavnú akciu (iotimer.github.io) zmazať nejde
+      const del = document.createElement("button"); del.className = "del"; del.textContent = "Zmazať";
+      del.onclick = e => { e.stopPropagation(); askDel = ev.slug; renderEvents(); };
+      acts.append(del);
+    }
+    meta.append(nm, st, acts);
+    if (askDel === ev.slug) {
+      const ask = document.createElement("div"); ask.className = "evAsk";
+      ask.onclick = e => e.stopPropagation();
+      const t = document.createElement("span");
+      t.textContent = (ev.run ? "Akcia práve beží! " : "") + "Zmazať akciu „" + ev.name + "“? Odkazy prestanú fungovať, akciu však neskôr obnovíš v Zmazaných akciách dole.";
+      const yes = document.createElement("button"); yes.className = "danger"; yes.textContent = "Áno, zmazať";
+      const no = document.createElement("button"); no.textContent = "Nie";
+      yes.onclick = () => deleteEvent(ev);
+      no.onclick = () => { askDel = null; renderEvents(); };
+      ask.append(t, yes, no);
+      meta.append(ask);
+    }
     const open = document.createElement("button"); open.className = "primary"; open.textContent = "Otvoriť";
     const tab = document.createElement("button"); tab.textContent = "Nová karta"; tab.title = "Otvorí akciu v novej karte, aby si mohol ovládať viac akcií naraz";
     open.onclick = e => { e.stopPropagation(); location.href = evUrl(ev.slug, "ovladanie"); };
     tab.onclick = e => { e.stopPropagation(); window.open(evUrl(ev.slug, "ovladanie"), "_blank"); };
-    li.onclick = () => { location.href = evUrl(ev.slug, "ovladanie"); };
+    li.onclick = () => { if (askDel !== ev.slug) location.href = evUrl(ev.slug, "ovladanie"); };
     li.append(meta, tab, open);
     L.appendChild(li);
   });
+  // kôš: zmazané akcie sa dajú obnoviť
+  const T = $("evTrashList");
+  T.innerHTML = "";
+  $("evTrash").hidden = !trash.length;
+  $("evTrashSum").textContent = "Zmazané akcie (" + trash.length + ")";
+  trash.forEach(ev => {
+    const li = document.createElement("li");
+    const meta = document.createElement("div"); meta.className = "meta";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = ev.name;
+    const st = document.createElement("span"); st.className = "st"; st.textContent = evCountText(ev) + " · " + shortUrl(evUrl(ev.slug, ""));
+    meta.append(nm, st);
+    const rb = document.createElement("button"); rb.textContent = "Obnoviť";
+    rb.onclick = () => restoreEvent(ev);
+    li.append(meta, rb);
+    T.appendChild(li);
+  });
+}
+function startCopy(ev) {
+  copyFrom = ev;
+  $("newEvTitle").textContent = "Kópia akcie";
+  $("copyNoteText").textContent = "Kopírujem „" + ev.name + "“: " + evCountText(ev) + ", časy, názvy prezentácií, prestávky a nastavenia. Zadaj nový názov a adresu.";
+  $("copyNote").hidden = false;
+  $("newEvBtn").textContent = "+ Vytvoriť kópiu";
+  $("newEvName").value = ev.name + " (kópia)";
+  slugTouched = false;
+  const base = ev.slug || suggestSlug(ev.name);
+  let n = 2; while (allSlugs.has(base + "-" + n)) n++;
+  $("newEvSlug").value = base + "-" + n;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  $("newEvName").focus(); $("newEvName").select();
+}
+function cancelCopy() {
+  copyFrom = null;
+  $("newEvTitle").textContent = "Nová akcia";
+  $("copyNote").hidden = true;
+  $("newEvBtn").textContent = "+ Vytvoriť akciu";
+  $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false;
+}
+$("copyCancel").onclick = cancelCopy;
+async function deleteEvent(ev) {
+  const stamp = new Date().toISOString();
+  // zmazaná akcia ostane v koši (dá sa obnoviť); jej časomiera sa zastaví
+  const doc = Object.assign({}, ev.doc, { deleted: true, deletedAt: stamp });
+  const r1 = await sb.from(TABLE).upsert({ id: "setup:" + ev.slug, data: doc, updated_at: stamp });
+  const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + ev.slug, data: { mode: "idle" }, updated_at: stamp });
+  askDel = null;
+  if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo zmazať: " + r2.error.message; $("evErr").hidden = false; }
+  await loadEvents();
+}
+async function restoreEvent(ev) {
+  const doc = Object.assign({}, ev.doc); delete doc.deleted; delete doc.deletedAt;
+  const r = await sb.from(TABLE).upsert({ id: "setup:" + ev.slug, data: doc, updated_at: new Date().toISOString() });
+  if (r.error) { $("evErr").textContent = "Akciu sa nepodarilo obnoviť: " + r.error.message; $("evErr").hidden = false; }
+  await loadEvents();
 }
 $("evName").oninput = () => {
   const old = setup.name, v = $("evName").value;
@@ -1183,13 +1281,20 @@ async function createEvent() {
   const prob = slugProblem(slug, null);
   if (prob) { $("evErr").textContent = prob; $("evErr").hidden = false; $("newEvSlug").focus(); return; }
   $("newEvBtn").disabled = true;
-  const doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
+  let doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
+  if (copyFrom) {
+    const src = JSON.parse(JSON.stringify(copyFrom.doc || {}));
+    delete src.deleted; delete src.deletedAt; delete src.movedTo;
+    // prestávkový text: ak bol rovnaký ako starý názov, prevezme nový názov
+    const brk = (!src.breakText || src.breakText === src.name || src.breakText === copyFrom.name) ? name : src.breakText;
+    doc = Object.assign(src, { name, breakText: brk });
+  }
   const stamp = new Date().toISOString();
   const r1 = await sb.from(TABLE).upsert({ id: "setup:" + slug, data: doc, updated_at: stamp });
   const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + slug, data: { mode: "idle" }, updated_at: stamp });
   $("newEvBtn").disabled = false;
   if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo vytvoriť: " + r2.error.message; $("evErr").hidden = false; return; }
-  $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false;
+  $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false; copyFrom = null;
   location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
 }
 $("newEvBtn").onclick = createEvent;
@@ -1282,6 +1387,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 j</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 k</div>
 </body>
 </html>
