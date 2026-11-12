@@ -213,6 +213,9 @@ button.back{font-size:18px;padding:0 18px}
 .upMeta{color:var(--muted);font-size:15px}
 .prog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:56vh;overflow:auto}
 .prog li{display:block;position:relative;overflow:hidden;border-radius:8px;flex-shrink:0}
+.prog li.jump{cursor:pointer}
+.prog li.jump:hover{background:rgba(255,255,255,.06)}
+.prog li.jump:hover .pn::after{content:"  ▶ prejsť sem";font-size:13px;color:var(--accent)}
 .prog .rowg{position:relative;display:grid;grid-template-columns:62px 1fr;gap:8px;padding:8px 10px}
 .prog.plan .rowg{grid-template-columns:66px 50px 1fr}
 .prog .at{font-variant-numeric:tabular-nums;color:#c9ced6;font-weight:600}
@@ -440,7 +443,7 @@ button.back{font-size:18px;padding:0 18px}
         <span class="adjInfo" id="adjInfo"></span>
       </div>
       <label class="blinkRow"><input type="checkbox" id="blinkConsole"> Blikať časomierou po vypršaní času</label>
-      <p class="muted">Klávesy: medzerník, Enter alebo šípka doprava = ďalej, šípka doľava = späť, šípka hore/dole = ±30 s, + / − = ±1 min. Prezentačný ovládač funguje tiež.</p>
+      <p class="muted">Kliknutím na meno v programe prejdeš priamo naň (čas stojí, ďalším ťuknutím sa spustí). Klávesy: medzerník, Enter alebo šípka doprava = ďalej, šípka doľava = späť, šípka hore/dole = ±30 s, + / − = ±1 min. Prezentačný ovládač funguje tiež.</p>
       <p class="status" id="saveStatus2" hidden></p>
     </div>
     <div class="cright">
@@ -1028,6 +1031,12 @@ function renderProgram(listEl, upEl) {
     }
     const rowg = document.createElement("div"); rowg.className = "rowg";
     if (hasPlan) { const at = document.createElement("span"); at.className = "at"; rowg.append(at); }
+    // v ovládaní: kliknutím na meno prejdeš priamo na tohto rečníka
+    if (listEl.id === "prog" && canAct() && !(li.className === "cur")) {
+      li.classList.add("jump");
+      li.title = "Prejsť na: " + p.n + " (čas stojí, ďalším ťuknutím sa spustí)";
+      li.onclick = () => jumpTo(i);
+    }
     rowg.append(t, d);
     li.appendChild(rowg);
     listEl.appendChild(li);
@@ -1099,6 +1108,16 @@ function next() {
   else { n.finished = true; n.startedAt = null; if (curRun()) curRun().endedAt = now0; }
   if (curRun() && (curRun().entries.length !== before || n.finished)) saveReport();
   setState(n);
+}
+// skok na ľubovoľné meno v programe (ďalej sa pokračuje od neho)
+function jumpTo(i) {
+  if (!canAct() || !setup.people[i]) return;
+  const s = state, now0 = Date.now(), run = curRun(), before = run ? run.entries.length : 0;
+  if (!s.finished) logStep(s, now0);   // bežiaci rečník / prestávka sa zapíše do prehľadu
+  hist.push(Object.assign({}, s));
+  if (hist.length > 300) hist.shift();
+  if (run && run.entries.length !== before) saveReport();
+  setState({ mode: "run", idx: i, between: false, finished: false, startedAt: null, adj: 0, breakAt: null, breakSec: 0 });
 }
 function back() {
   if (!canAct() || !hist.length) return;
@@ -1731,6 +1750,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 p</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 q</div>
 </body>
 </html>
