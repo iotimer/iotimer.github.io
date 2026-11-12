@@ -147,7 +147,9 @@ html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
 .startRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:600px){.startRow{grid-template-columns:1fr}}
 button.alt{background:#1b2a4d;border-color:var(--accent-line)}
-button.next{font-size:22px;padding:20px}
+button.next{font-size:22px;padding:20px;min-width:0}
+button.next .nx{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2}
+@media (max-width:600px){button.next{font-size:17px;padding:12px 14px}button.back{font-size:16px;padding:0 12px}}
 button.back{font-size:18px;padding:0 18px}
 .adjRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .adjRow button{min-width:74px;font-variant-numeric:tabular-nums}
@@ -757,7 +759,8 @@ function renderConsole() {
   else if (s.between) label = nxt ? "Zobraziť: " + nxt.n : "Ďalej";
   else if (s.startedAt == null) label = "Spustiť odpočet";
   else label = !nxt ? "Ukončiť program" : (setup.people[s.idx] && setup.people[s.idx].b === false ? "Ukončiť → " + nxt.n : "Ukončiť a prestávka");
-  $("nextBtn").textContent = label + "  ▶";
+  const nx = document.createElement("span"); nx.className = "nx"; nx.textContent = label + "  ▶";
+  $("nextBtn").replaceChildren(nx);
   $("backBtn").disabled = !hist.length;
   const canAdj = !s.finished && !s.between;
   document.querySelectorAll(".adj").forEach(b => b.disabled = !canAdj);
@@ -1059,6 +1062,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 d</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 e</div>
 </body>
 </html>
