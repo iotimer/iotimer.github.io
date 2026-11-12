@@ -79,6 +79,10 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 .item.dragging{transition:none;position:relative;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.6);border-radius:8px;outline:1px solid var(--accent)}
 .item.dragging .drag{cursor:grabbing}
 .item .name{flex:1;min-width:140px}
+.item .brk{flex:1 1 100%;margin-left:32px;display:flex;align-items:center;gap:8px;font-size:15px;color:var(--muted);cursor:pointer}
+.item .brk input{width:20px;height:20px;margin:0;accent-color:var(--accent)}
+.item .brk.on{color:var(--fg)}
+.brkAll{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .item .ptitle{flex:1 1 100%;margin-left:32px;font-size:15px;color:#c9ced6}
 .num{width:24px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:flex-start}
@@ -246,7 +250,9 @@ button.back{font-size:18px;padding:0 18px}
 
   <div class="card">
     <h2>Text počas prestávky medzi menami</h2>
+    <p class="muted" style="margin:0 0 8px">Kde bude prestávka, zaškrtneš pri každom mene („prestávka po tomto mene“). Bez prestávky ide ďalší rečník hneď za predchádzajúcim.</p>
     <input id="breakText" type="text" placeholder="Napríklad: Prestávka" aria-label="Text počas prestávky">
+    <div class="brkAll"><button id="brkAllOn">Prestávka po každom mene</button><button id="brkAllOff">Bez prestávok</button></div>
   </div>
 
   <div class="card">
@@ -405,13 +411,20 @@ function renderList() {
       <button class="icon" title="Hore" ${i === 0 ? "disabled" : ""}>↑</button>
       <button class="icon" title="Dole" ${i === people.length - 1 ? "disabled" : ""}>↓</button>
       <button class="icon" title="Zmazať">×</button>
-      <input class="ptitle" type="text" placeholder="Názov prezentácie (nepovinné)" aria-label="Názov prezentácie ${i + 1}">`;
+      <input class="ptitle" type="text" placeholder="Názov prezentácie (nepovinné)" aria-label="Názov prezentácie ${i + 1}">
+      ${i < setup.people.length - 1 ? '<label class="brk"><input type="checkbox"> prestávka po tomto mene</label>' : ""}`;
     const [nI, mI, sI, tI] = row.querySelectorAll("input");
     nI.value = p.n; mI.value = Math.floor(p.t / 60); sI.value = p.t % 60; tI.value = p.p || "";
     nI.oninput = () => { p.n = nI.value; saveSetup(); };
     tI.oninput = () => { p.p = tI.value; saveSetup(); };
     const upd = () => { p.t = toSec(mI.value, sI.value); saveSetup(); renderStart(); };
     mI.oninput = upd; sI.oninput = upd;
+    const bI = row.querySelector(".brk input");
+    if (bI) {
+      bI.checked = p.b !== false;
+      bI.parentNode.classList.toggle("on", bI.checked);
+      bI.onchange = () => { p.b = bI.checked; bI.parentNode.classList.toggle("on", bI.checked); saveSetup(true); };
+    }
     const [up, down, del] = row.querySelectorAll("button");
     up.onclick = () => { [people[i - 1], people[i]] = [people[i], people[i - 1]]; saveSetup(true); renderList(); };
     down.onclick = () => { [people[i + 1], people[i]] = [people[i], people[i + 1]]; saveSetup(true); renderList(); };
@@ -493,6 +506,9 @@ function renderSetupFields() {
   renderLang();
   renderList();
 }
+function setAllBreaks(v) { setup.people.forEach(p => { p.b = v; }); saveSetup(true); renderList(); }
+document.getElementById("brkAllOn").onclick = () => setAllBreaks(true);
+document.getElementById("brkAllOff").onclick = () => setAllBreaks(false);
 function addName(n) { n = n.trim(); if (n) setup.people.push({ n, t: setup.def, p: "" }); }
 
 $("addBtn").onclick = () => { addName($("newName").value); $("newName").value = ""; saveSetup(true); renderList(); };
@@ -538,6 +554,12 @@ function splitLine(line, d) {
   out.push(cur);
   return out.map(x => x.trim());
 }
+// 4. stĺpec v CSV: prestávka po mene (áno / nie); prázdne = áno
+function brkCell(v) {
+  v = (v || "").trim().toLowerCase();
+  if (!v) return true;
+  return !/^(nie|n|no|0|false|bez|-)$/.test(v);
+}
 function parseCSV(text) {
   text = text.replace(/^﻿/, "");
   const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
@@ -551,7 +573,7 @@ function parseCSV(text) {
     if (!name) return;
     const t = parseTime(cells[1]);
     if (i === 0 && cells.length > 1 && cells[1] && t === null) return;   // riadok s nadpismi
-    rows.push({ n: name, t: t === null ? setup.def : t, p: cells[2] || "" });
+    rows.push({ n: name, t: t === null ? setup.def : t, p: cells[2] || "", b: brkCell(cells[3]) });
   });
   return rows;
 }
@@ -700,7 +722,10 @@ function next() {
   const n = Object.assign({}, s);
   if (s.between) { n.between = false; n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }
   else if (s.startedAt == null) { n.startedAt = Date.now(); }
-  else if (s.idx + 1 < setup.people.length) { n.between = true; n.startedAt = null; }
+  else if (s.idx + 1 < setup.people.length) {
+    if (setup.people[s.idx].b !== false) { n.between = true; n.startedAt = null; }
+    else { n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }   // bez prestávky: hneď ďalšie meno
+  }
   else { n.finished = true; n.startedAt = null; }
   setState(n);
 }
@@ -731,7 +756,7 @@ function renderConsole() {
   if (s.finished) label = "Späť na zoznam";
   else if (s.between) label = nxt ? "Zobraziť: " + nxt.n : "Ďalej";
   else if (s.startedAt == null) label = "Spustiť odpočet";
-  else label = nxt ? "Ukončiť a prestávka" : "Ukončiť program";
+  else label = !nxt ? "Ukončiť program" : (setup.people[s.idx] && setup.people[s.idx].b === false ? "Ukončiť → " + nxt.n : "Ukončiť a prestávka");
   $("nextBtn").textContent = label + "  ▶";
   $("backBtn").disabled = !hist.length;
   const canAdj = !s.finished && !s.between;
@@ -876,7 +901,7 @@ setInterval(tick, 200);
 function applySetupDoc(d) {
   d = d || {};
   setup = {
-    people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "" })) : [],
+    people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "", b: p.b !== false })) : [],
     def: d.def || 180,
     breakText: d.breakText != null ? d.breakText : "Prestávka",
     english: !!d.english,
@@ -1034,6 +1059,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 c</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 d</div>
 </body>
 </html>
