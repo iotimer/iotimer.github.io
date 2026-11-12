@@ -250,7 +250,9 @@ button.back{font-size:18px;padding:0 18px}
     <h2>Moje akcie</h2>
     <ul class="evList" id="evList"></ul>
     <p class="muted" id="evEmpty" hidden>Zatiaľ žiadna akcia. Vytvor prvú vyššie.</p>
-    <details id="evTrash" hidden><summary id="evTrashSum">Zmazané akcie</summary><ul class="evList" id="evTrashList" style="margin-top:10px"></ul></details>
+    <details id="evTrash" hidden><summary id="evTrashSum">Zmazané akcie</summary><ul class="evList" id="evTrashList" style="margin-top:10px"></ul>
+      <div class="row" style="margin-top:10px"><button class="danger" id="purgeAll">Vymazať všetky natrvalo</button><span id="purgeAsk" hidden>Naozaj? <button class="danger" id="purgeYes">Áno</button> <button id="purgeNo">Nie</button></span></div>
+    </details>
   </div>
 </div>
 
@@ -1114,7 +1116,7 @@ async function enterControl() {
 const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
 let setupDeleted = false;
-let events = [], trash = [], allSlugs = new Set(), copyFrom = null, askDel = null;
+let events = [], trash = [], allSlugs = new Set(), copyFrom = null, askDel = null, askPurge = null;
 async function loadEvents() {
   $("evErr").hidden = true;
   try {
@@ -1204,7 +1206,19 @@ function renderEvents() {
     meta.append(nm, st);
     const rb = document.createElement("button"); rb.textContent = "Obnoviť";
     rb.onclick = () => restoreEvent(ev);
-    li.append(meta, rb);
+    const xb = document.createElement("button"); xb.className = "danger"; xb.textContent = "Vymazať natrvalo";
+    xb.onclick = () => { askPurge = ev.slug; renderEvents(); };
+    if (askPurge === ev.slug) {
+      const ask = document.createElement("div"); ask.className = "evAsk";
+      const t = document.createElement("span"); t.textContent = "Natrvalo vymazať „" + ev.name + "“? Program sa už nedá obnoviť.";
+      const yes = document.createElement("button"); yes.className = "danger"; yes.textContent = "Áno, natrvalo";
+      const no = document.createElement("button"); no.textContent = "Nie";
+      yes.onclick = () => purgeEvents([ev]);
+      no.onclick = () => { askPurge = null; renderEvents(); };
+      ask.append(t, yes, no);
+      meta.append(ask);
+    }
+    li.append(meta, rb, xb);
     T.appendChild(li);
   });
 }
@@ -1230,6 +1244,9 @@ function cancelCopy() {
   $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false;
 }
 $("copyCancel").onclick = cancelCopy;
+$("purgeAll").onclick = () => { $("purgeAsk").hidden = false; $("purgeAll").hidden = true; };
+$("purgeNo").onclick = () => { $("purgeAsk").hidden = true; $("purgeAll").hidden = false; };
+$("purgeYes").onclick = async () => { $("purgeAsk").hidden = true; $("purgeAll").hidden = false; await purgeEvents(trash.slice()); };
 async function deleteEvent(ev) {
   const stamp = new Date().toISOString();
   // zmazaná akcia ostane v koši (dá sa obnoviť); jej časomiera sa zastaví
@@ -1238,6 +1255,30 @@ async function deleteEvent(ev) {
   const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + ev.slug, data: { mode: "idle" }, updated_at: stamp });
   askDel = null;
   if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo zmazať: " + r2.error.message; $("evErr").hidden = false; }
+  await loadEvents();
+}
+// natrvalo: zmaže riadky akcie z databázy (aj staré adresy, ktoré na ňu presmerúvali)
+async function purgeEvents(list) {
+  askPurge = null;
+  $("evErr").hidden = true;
+  const slugs = list.map(e => e.slug).filter(Boolean);
+  if (!slugs.length) return;
+  const ids = [];
+  slugs.forEach(sl => ids.push("setup:" + sl, "state:" + sl));
+  try {
+    const all = await sb.from(TABLE).select("id,data");
+    (all.data || []).forEach(r => {
+      if (r.id.startsWith("setup:") && r.data && slugs.includes(r.data.movedTo)) ids.push(r.id, "state:" + r.id.slice(6));
+    });
+  } catch (e) {}
+  const res = await sb.from(TABLE).delete().in("id", ids).select("id");
+  if (res.error) {
+    $("evErr").textContent = "Vymazanie zlyhalo: " + res.error.message; $("evErr").hidden = false;
+  } else if (!res.data || !res.data.length) {
+    // databáza nepovolila mazanie: chýba pravidlo v Supabase (pozri návod)
+    $("evErr").textContent = "Databáza zatiaľ nepovoľuje mazanie. V Supabase raz spusti príkaz z návodu (SQL Editor), potom to pôjde.";
+    $("evErr").hidden = false;
+  }
   await loadEvents();
 }
 async function restoreEvent(ev) {
@@ -1387,6 +1428,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 k</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 l</div>
 </body>
 </html>

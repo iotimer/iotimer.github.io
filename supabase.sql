@@ -23,8 +23,13 @@ drop policy if exists "menit moze prihlaseny" on public.odpocet;
 create policy "menit moze prihlaseny" on public.odpocet
   for update to authenticated using (true) with check (true);
 
+-- mazanie akcií natrvalo (hlavná akcia "setup"/"state" sa zmazať nedá)
+drop policy if exists "mazat moze prihlaseny" on public.odpocet;
+create policy "mazat moze prihlaseny" on public.odpocet
+  for delete to authenticated using (id <> 'setup' and id <> 'state');
+
 grant select on public.odpocet to anon, authenticated;
-grant insert, update on public.odpocet to authenticated;
+grant insert, update, delete on public.odpocet to authenticated;
 
 -- 3) Začiatočné riadky
 insert into public.odpocet (id, data) values
