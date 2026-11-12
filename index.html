@@ -809,6 +809,9 @@ function render() {
   if (!db) return;
   const sec = section();
   ["login", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
+  // len časomiera: bez posuvnej lišty vpravo
+  document.documentElement.style.overflow = sec === "stage" ? "hidden" : "";
+  document.body.style.overflow = sec === "stage" ? "hidden" : "";
   if (sec === "stage") {
     $("stageHint").hidden = isFull();
     // iPhone nevie zapnúť celú obrazovku z webu: poradí, ako na to
