@@ -642,6 +642,8 @@ function renderProgram(listEl, upEl) {
     const m = document.createElement("div"); m.className = "upMeta"; m.textContent = mmss(nextP.t) + (nextP.p ? " · " + nextP.p : "");
     upEl.append(n, m);
   }
+  const keepTop = listEl.scrollTop, pageX = window.scrollX, pageY = window.scrollY;
+  listEl.style.minHeight = listEl.offsetHeight + "px";   // pri prestavbe zoznamu sa stránka nezmrští
   listEl.innerHTML = "";
   people.forEach((p, i) => {
     const li = document.createElement("li");
@@ -659,8 +661,16 @@ function renderProgram(listEl, upEl) {
     li.appendChild(rowg);
     listEl.appendChild(li);
   });
+  // posunie iba samotný zoznam, nikdy celú stránku (na iPhone inak skákal obraz)
+  listEl.style.minHeight = "";
+  listEl.scrollTop = keepTop;
   const cur = listEl.querySelector(".cur");
-  if (cur) cur.scrollIntoView({ block: "nearest" });
+  if (cur && listEl.scrollHeight > listEl.clientHeight + 1) {
+    const lr = listEl.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+    if (cr.top < lr.top) listEl.scrollTop += cr.top - lr.top;
+    else if (cr.bottom > lr.bottom) listEl.scrollTop += cr.bottom - lr.bottom;
+  }
+  window.scrollTo(pageX, pageY);
 }
 
 /* ---------- Ovládanie (autor) ---------- */
@@ -1024,6 +1034,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 b</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 c</div>
 </body>
 </html>
