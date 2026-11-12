@@ -126,6 +126,12 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 
 #stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#000;z-index:5;overflow:hidden}
 html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
+.evList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.evList li{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.evList li.cur{border-color:var(--accent-line);background:rgba(79,125,255,.12)}
+.evList li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.evList li .st{font-size:13px;color:var(--muted)}
+.evList li .st.run{color:#34c759}
 .ver{position:fixed;left:8px;bottom:6px;font-size:11px;color:#555;pointer-events:none;z-index:1}
 .corner{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));background:transparent;border:0;color:#fff;opacity:.25;font-size:15px;padding:8px 12px;z-index:6}
 .corner:hover{opacity:.8}
@@ -207,6 +213,20 @@ button.back{font-size:18px;padding:0 18px}
 <div class="wrap" id="setup" hidden>
   <h1>Odpočet naživo</h1>
 
+  <div class="card">
+    <h2>Akcia</h2>
+    <div class="row">
+      <input id="evName" class="grow" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
+    </div>
+    <p class="muted" style="margin:6px 0 12px">Názov akcie sa zobrazuje aj ako text počas prestávky (kým ho nižšie nezmeníš). Každá akcia má vlastný program, vlastné odkazy a ovláda sa samostatne. Viac akcií naraz ovládaš v samostatných kartách alebo na rôznych zariadeniach.</p>
+    <ul class="evList" id="evList"></ul>
+    <div class="row" style="margin-top:10px">
+      <input id="newEvName" class="grow" type="text" placeholder="Názov novej akcie" aria-label="Názov novej akcie">
+      <button id="newEvBtn">+ Nová akcia</button>
+    </div>
+    <p class="err" id="evErr" hidden></p>
+  </div>
+
   <div class="card share">
     <h2>Odkazy</h2>
     <p class="muted"><b>Pre divákov</b>: vidia bežiacu časomieru a program, nič nemôžu meniť a nemusia sa prihlasovať.</p>
@@ -285,7 +305,7 @@ button.back{font-size:18px;padding:0 18px}
 <!-- AUTOR: ovládací panel počas programu -->
 <div class="panelWrap" id="console" hidden>
   <div class="cbar">
-    <strong>Ovládanie</strong>
+    <strong>Ovládanie<span id="cEvName" class="muted" style="font-weight:600"></span></strong>
     <span class="pill" id="opPill">Naživo</span>
     <span class="grow"></span>
     <button id="openProjBtn">Otvoriť okno pre projektor</button>
@@ -322,7 +342,7 @@ button.back{font-size:18px;padding:0 18px}
 <!-- DIVÁK: časomiera + program -->
 <div class="panelWrap" id="viewer" hidden>
   <div class="cbar">
-    <strong>Odpočet</strong>
+    <strong id="vEvName">Odpočet</strong>
     <span class="pill wait" id="vPill">Pripája sa…</span>
     <span class="grow"></span>
     <button id="vFull">Len časomiera</button>
@@ -361,14 +381,19 @@ const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.m
 ["preview", "vScreen", "stageScreen"].forEach(id => $(id).appendChild($("screenTpl").content.cloneNode(true)));
 
 const TABLE = "odpocet";
+// Akcia: ?akcia=slug v adrese. Bez nej = pôvodná (hlavná) akcia s riadkami "setup" a "state".
+const EV = (new URLSearchParams(location.search).get("akcia") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+const SID = EV ? "setup:" + EV : "setup";
+const TID = EV ? "state:" + EV : "state";
+const evUrl = (slug, hash) => location.origin + location.pathname + (slug ? "?akcia=" + slug : "") + (hash ? "#" + hash : "");
 let sb = null, db = null, isOp = false, session = null;
-let setup = { people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
+let setup = { name: "", people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
 let state = { mode: "idle" };
 let hist = [];                                     // kroky na vrátenie (len u autora)
 const route = () => location.hash.replace("#", ""); // "", "ovladanie", "projektor"
 let projector = route() === "projektor";           // táto obrazovka = len časomiera
 let viewerFull = false;                            // divák si zapol len časomieru
-const lastUpdated = { setup: "", state: "" };
+const lastUpdated = {};
 
 /* ---------- Zápisy do databázy: vždy jeden naraz ---------- */
 let chain = Promise.resolve();
@@ -393,8 +418,8 @@ function write(id, data) {
 let setupTimer = null;
 function saveSetup(now) {
   clearTimeout(setupTimer);
-  if (now) { write("setup", setup); return; }
-  setupTimer = setTimeout(() => write("setup", setup), 600);
+  if (now) { write(SID, setup); return; }
+  setupTimer = setTimeout(() => write(SID, setup), 600);
 }
 
 /* ---------- Zoznam (autor) ---------- */
@@ -502,6 +527,7 @@ function renderLang() {
   $("blinkConsole").checked = !!setup.blink;
 }
 function renderSetupFields() {
+  $("evName").value = setup.name || (EV ? EV : "");
   $("defMin").value = Math.floor(setup.def / 60);
   $("defSec").value = setup.def % 60;
   $("breakText").value = setup.breakText;
@@ -712,7 +738,7 @@ function beep() {
 function setState(n) {
   state = n;
   onStateChange();
-  write("state", n);
+  write(TID, n);
 }
 function canAct() { return isOp && !projector && !viewerFull && state.mode === "run"; }
 function next() {
@@ -744,7 +770,7 @@ function adjust(d) {
 }
 function startShow() {
   if (!setup.people.length) return;
-  clearTimeout(setupTimer); write("setup", setup);
+  clearTimeout(setupTimer); write(SID, setup);
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
   hist = [];
   setState({ mode: "run", idx: -1, between: true, finished: false, startedAt: null, adj: 0 });
@@ -773,7 +799,7 @@ $("startBtn").onclick = startShow;
 let projWin = null;
 function openProjectorWindow() {
   if (projWin && !projWin.closed) { try { projWin.focus(); } catch (e) {} return true; }
-  projWin = window.open(location.origin + location.pathname + "#projektor", "iotimer-projektor", "popup=yes,width=1024,height=576");
+  projWin = window.open(evUrl(EV, "projektor"), "iotimer-projektor", "popup=yes,width=1024,height=576");
   return !!projWin;
 }
 $("startProjBtn").onclick = () => {
@@ -840,6 +866,9 @@ function section() {
 }
 function onStateChange() {
   if (!db) return;
+  $("cEvName").textContent = setup.name ? " · " + setup.name : "";
+  $("vEvName").textContent = setup.name || "Odpočet";
+  document.title = (setup.name ? setup.name + " – " : "") + "ioTimer";
   render();
   if (section() === "console") { renderConsole(); renderProgram($("prog"), $("upNext")); }
   if (section() === "viewer") renderProgram($("vProg"), $("vUp"));
@@ -905,6 +934,7 @@ function applySetupDoc(d) {
   d = d || {};
   setup = {
     people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "", b: p.b !== false })) : [],
+    name: d.name || "",
     def: d.def || 180,
     breakText: d.breakText != null ? d.breakText : "Prestávka",
     english: !!d.english,
@@ -915,17 +945,20 @@ function applySetupDoc(d) {
 // aby mu rýchle ťuknutia ani písanie neskákali späť.
 const isControlling = () => isOp && route() === "ovladanie" && !projector && !viewerFull;
 function applyRow(row) {
-  if (!row || !row.id) return;
+  if (!row || !row.id || (row.id !== SID && row.id !== TID)) return;
   const at = row.updated_at || "";
   if (lastUpdated[row.id] && at && at <= lastUpdated[row.id]) return;  // staršia alebo rovnaká verzia
   if (isControlling()) return;
   if (at) lastUpdated[row.id] = at;
-  if (row.id === "state") state = row.data && row.data.mode ? row.data : { mode: "idle" };
-  if (row.id === "setup") applySetupDoc(row.data);
+  if (row.id !== SID && row.id !== TID) return;   // iná akcia
+  if (row.id === TID) state = row.data && row.data.mode ? row.data : { mode: "idle" };
+  if (row.id === SID) applySetupDoc(row.data);
   onStateChange();
 }
 async function fetchAll() {
-  const res = await sb.from(TABLE).select("id,data,updated_at");
+  let q = sb.from(TABLE).select("id,data,updated_at");
+  if (q && typeof q.in === "function") q = q.in("id", [SID, TID]);   // len táto akcia
+  const res = await q;
   if (res.error) throw res.error;
   return res.data || [];
 }
@@ -951,7 +984,7 @@ let liteOk = false;
 function liteClient() {
   return { from: () => ({ select: cols => new Promise(resolve => {
     const x = new XMLHttpRequest();
-    x.open("GET", SUPABASE_URL + "/rest/v1/" + TABLE + "?select=" + encodeURIComponent(cols));
+    x.open("GET", SUPABASE_URL + "/rest/v1/" + TABLE + "?select=" + encodeURIComponent(cols) + "&id=in.(" + encodeURIComponent('"' + SID + '","' + TID + '"') + ")");
     x.setRequestHeader("apikey", SUPABASE_KEY);
     x.setRequestHeader("Authorization", "Bearer " + SUPABASE_KEY);
     x.timeout = 8000;
@@ -966,9 +999,8 @@ async function refresh() {
 }
 
 function fillLinks() {
-  const base = location.origin + location.pathname;
-  $("linkViewer").textContent = base;
-  $("linkProjector").textContent = base + "#projektor";
+  $("linkViewer").textContent = evUrl(EV, "");
+  $("linkProjector").textContent = evUrl(EV, "projektor");
 }
 document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", async () => {
   const text = $(b.dataset.target).textContent;
@@ -987,8 +1019,8 @@ async function enterControl() {
     const rows = await fetchAll();
     rows.forEach(r => {
       if (r.updated_at) lastUpdated[r.id] = r.updated_at;
-      if (r.id === "setup") applySetupDoc(r.data);
-      if (r.id === "state") state = r.data && r.data.mode ? r.data : { mode: "idle" };
+      if (r.id === SID) applySetupDoc(r.data);
+      if (r.id === TID) state = r.data && r.data.mode ? r.data : { mode: "idle" };
     });
   } catch (e) {
     showSaveError("Program sa nepodarilo načítať: " + (e.message || "skontroluj pripojenie"));
@@ -996,7 +1028,77 @@ async function enterControl() {
   fillLinks();
   renderSetupFields();
   onStateChange();
+  loadEvents();
 }
+
+/* ---------- Viac akcií ---------- */
+const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
+let events = [];
+async function loadEvents() {
+  try {
+    const res = await sb.from(TABLE).select("id,data,updated_at");
+    if (res.error) throw res.error;
+    const rows = res.data || [];
+    const run = {};
+    rows.filter(r => r.id === "state" || r.id.startsWith("state:"))
+        .forEach(r => { run[r.id === "state" ? "" : r.id.slice(6)] = r.data && r.data.mode === "run"; });
+    events = rows.filter(r => r.id === "setup" || r.id.startsWith("setup:")).map(r => {
+      const slug = r.id === "setup" ? "" : r.id.slice(6);
+      return { slug, name: (r.data && r.data.name) || (slug ? slug : "Hlavná akcia"), run: !!run[slug], at: r.updated_at || "" };
+    });
+    if (!events.some(e => e.slug === EV)) events.push({ slug: EV, name: setup.name || (EV || "Hlavná akcia"), run: state.mode === "run", at: "" });
+    events.sort((a, b) => a.name.localeCompare(b.name, "sk"));
+  } catch (e) { $("evErr").textContent = "Zoznam akcií sa nepodarilo načítať."; $("evErr").hidden = false; }
+  renderEvents();
+}
+function renderEvents() {
+  const L = $("evList");
+  L.innerHTML = "";
+  events.forEach(ev => {
+    const li = document.createElement("li");
+    if (ev.slug === EV) li.className = "cur";
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = ev.slug === EV ? (setup.name || ev.name) : ev.name;
+    const st = document.createElement("span"); st.className = "st" + (ev.run ? " run" : "");
+    st.textContent = ev.slug === EV ? "otvorená" : (ev.run ? "beží" : "");
+    li.append(nm, st);
+    if (ev.slug !== EV) {
+      const a = document.createElement("button");
+      a.textContent = "Ovládať";
+      a.title = "Otvorí sa v novej karte, táto ostane otvorená";
+      a.onclick = () => window.open(evUrl(ev.slug, "ovladanie"), "_blank");
+      li.append(a);
+    }
+    L.appendChild(li);
+  });
+}
+$("evName").oninput = () => {
+  const old = setup.name, v = $("evName").value;
+  setup.name = v;
+  // prestávkový text ide s názvom akcie, kým ho autor nezmení na iný
+  if (!setup.breakText || setup.breakText === old || (!old && setup.breakText === "Prestávka")) { setup.breakText = v; $("breakText").value = v; }
+  saveSetup(); renderEvents();
+};
+async function createEvent() {
+  const name = $("newEvName").value.trim();
+  $("evErr").hidden = true;
+  if (!name) { $("newEvName").focus(); return; }
+  let slug = slugify(name), n = 2;
+  const used = new Set(events.map(e => e.slug));
+  while (used.has(slug) || slug === "") slug = slugify(name) + "-" + n++;
+  $("newEvBtn").disabled = true;
+  const doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
+  const stamp = new Date().toISOString();
+  const r1 = await sb.from(TABLE).upsert({ id: "setup:" + slug, data: doc, updated_at: stamp });
+  const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + slug, data: { mode: "idle" }, updated_at: stamp });
+  $("newEvBtn").disabled = false;
+  if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo vytvoriť: " + r2.error.message; $("evErr").hidden = false; return; }
+  $("newEvName").value = "";
+  location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
+}
+$("newEvBtn").onclick = createEvent;
+$("newEvName").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
 
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -1062,6 +1164,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 e</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 f</div>
 </body>
 </html>
