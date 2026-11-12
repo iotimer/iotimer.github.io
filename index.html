@@ -127,9 +127,14 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 #stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#000;z-index:5;overflow:hidden}
 html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
 .evList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.evList li{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.evList li{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;cursor:pointer}
+.evList li:hover{border-color:var(--accent-line)}
+.evList li .meta{display:flex;flex-direction:column;flex:1;min-width:0;gap:2px}
+.evList li .nm{font-size:18px}
+.evTop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.evTop h1{margin:0;flex:1}
 .evList li.cur{border-color:var(--accent-line);background:rgba(79,125,255,.12)}
-.evList li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.evList li .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .evList li .st{font-size:13px;color:var(--muted)}
 .evList li .st.run{color:#34c759}
 .ver{position:fixed;left:8px;bottom:6px;font-size:11px;color:#555;pointer-events:none;z-index:1}
@@ -209,23 +214,33 @@ button.back{font-size:18px;padding:0 18px}
   </form>
 </div>
 
+<!-- AUTOR: zoznam akcií (hneď po prihlásení) -->
+<div class="wrap" id="events" hidden>
+  <div class="evTop"><h1>Akcie</h1><button id="logoutBtn2">Odhlásiť sa</button></div>
+  <div class="card">
+    <h2>Nová akcia</h2>
+    <div class="row">
+      <input id="newEvName" class="grow" type="text" placeholder="Názov akcie, napr. Konferencia JARDIN 2026" aria-label="Názov novej akcie">
+      <button class="primary" id="newEvBtn">+ Vytvoriť akciu</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0">Názov sa zobrazí aj ako text počas prestávky. Každá akcia má vlastný program, časomieru a odkazy pre divákov a projektor.</p>
+    <p class="err" id="evErr" hidden></p>
+  </div>
+  <div class="card">
+    <h2>Moje akcie</h2>
+    <ul class="evList" id="evList"></ul>
+    <p class="muted" id="evEmpty" hidden>Zatiaľ žiadna akcia. Vytvor prvú vyššie.</p>
+  </div>
+</div>
+
 <!-- AUTOR: nastavenie programu -->
 <div class="wrap" id="setup" hidden>
-  <h1>Odpočet naživo</h1>
-  <div id="sEvSlot"></div>
-
-  <div class="card" id="evCard">
-    <h2>Akcia</h2>
-    <div class="row">
-      <input id="evName" class="grow" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
-    </div>
-    <p class="muted" style="margin:6px 0 12px">Názov akcie sa zobrazuje aj ako text počas prestávky (kým ho nižšie nezmeníš). Každá akcia má vlastný program, vlastné odkazy a ovláda sa samostatne. Viac akcií naraz ovládaš v samostatných kartách alebo na rôznych zariadeniach.</p>
-    <ul class="evList" id="evList"></ul>
-    <div class="row" style="margin-top:10px">
-      <input id="newEvName" class="grow" type="text" placeholder="Názov novej akcie" aria-label="Názov novej akcie">
-      <button id="newEvBtn">+ Nová akcia</button>
-    </div>
-    <p class="err" id="evErr" hidden></p>
+  <h1 id="sTitle">Odpočet naživo</h1>
+  <div class="row" style="margin-bottom:4px"><button id="toEvents">← Všetky akcie</button></div>
+  <div class="card">
+    <h2>Názov akcie</h2>
+    <input id="evName" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
+    <p class="muted" style="margin:8px 0 0">Zobrazuje sa aj ako text počas prestávky, kým ho nižšie nezmeníš.</p>
   </div>
 
   <div class="card share">
@@ -309,12 +324,11 @@ button.back{font-size:18px;padding:0 18px}
     <strong>Ovládanie<span id="cEvName" class="muted" style="font-weight:600"></span></strong>
     <span class="pill" id="opPill">Naživo</span>
     <span class="grow"></span>
-    <button id="cEvBtn">Akcie ▾</button>
+    <button id="cEvBtn">← Akcie</button>
     <button id="openProjBtn">Otvoriť okno pre projektor</button>
     <button class="danger" id="cQuit">Ukončiť</button>
     <span id="cQuitAsk" hidden>Ukončiť program? <button class="danger" id="cQuitYes">Áno</button> <button id="cQuitNo">Nie</button></span>
   </div>
-  <div id="cEvSlot" hidden></div>
   <div class="cgrid">
     <div class="cleft">
       <div class="plabel">Čo vidia ostatní</div>
@@ -385,10 +399,14 @@ const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.m
 
 const TABLE = "odpocet";
 // Akcia: ?akcia=slug v adrese. Bez nej = pôvodná (hlavná) akcia s riadkami "setup" a "state".
-const EV = (new URLSearchParams(location.search).get("akcia") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+const EVP = (new URLSearchParams(location.search).get("akcia") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+const EV = EVP === "hlavna" ? "" : EVP;             // "hlavna" = pôvodná akcia (riadky setup / state)
+const isHome = () => route() === "ovladanie" && !EVP; // po prihlásení: zoznam akcií
 const SID = EV ? "setup:" + EV : "setup";
 const TID = EV ? "state:" + EV : "state";
-const evUrl = (slug, hash) => location.origin + location.pathname + (slug ? "?akcia=" + slug : "") + (hash ? "#" + hash : "");
+const evUrl = (slug, hash) => location.origin + location.pathname +
+  (slug ? "?akcia=" + slug : (hash === "ovladanie" ? "?akcia=hlavna" : "")) + (hash ? "#" + hash : "");
+const homeUrl = () => location.origin + location.pathname + "#ovladanie";
 let sb = null, db = null, isOp = false, session = null;
 let setup = { name: "", people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
 let state = { mode: "idle" };
@@ -863,6 +881,7 @@ function section() {
   if (projector || viewerFull) return "stage";
   if (route() === "ovladanie") {
     if (!isOp) return "login";
+    if (isHome()) return "events";
     return state.mode === "run" ? "console" : "setup";
   }
   return "viewer";
@@ -871,6 +890,7 @@ function onStateChange() {
   if (!db) return;
   $("cEvName").textContent = setup.name ? " · " + setup.name : "";
   $("vEvName").textContent = setup.name || "Odpočet";
+  $("sTitle").textContent = setup.name || (EV ? EV : "Hlavná akcia");
   document.title = (setup.name ? setup.name + " – " : "") + "ioTimer";
   render();
   if (section() === "console") { renderConsole(); renderProgram($("prog"), $("upNext")); }
@@ -880,10 +900,7 @@ function onStateChange() {
 function render() {
   if (!db) return;
   const sec = section();
-  ["login", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
-  // karta Akcia: v nastavení hore, v ovládaní pod tlačidlom „Akcie“
-  const evSlot = sec === "console" ? $("cEvSlot") : $("sEvSlot");
-  if ($("evCard").parentNode !== evSlot) evSlot.appendChild($("evCard"));
+  ["login", "events", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
   // len časomiera: bez posuvnej lišty vpravo
   document.documentElement.classList.toggle("stageOn", sec === "stage");
   document.documentElement.style.overflow = sec === "stage" ? "hidden" : "";
@@ -974,10 +991,13 @@ function setPill(ok) {
   p.className = "pill" + (ok ? "" : " wait");
 }
 
-let realtimeOk = false;
+let realtimeOk = false, evTimer = null;
 function startRealtime() {
   sb.channel("odpocet-zmeny")
-    .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, payload => applyRow(payload.new))
+    .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, payload => {
+      if (isHome() && isOp) { clearTimeout(evTimer); evTimer = setTimeout(loadEvents, 400); return; }
+      applyRow(payload.new);
+    })
     .subscribe(status => {
       realtimeOk = status === "SUBSCRIBED";
       setPill(realtimeOk);
@@ -1020,6 +1040,7 @@ document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", asyn
 }));
 
 async function enterControl() {
+  if (isHome()) { document.title = "Akcie – ioTimer"; render(); await loadEvents(); return; }
   // po prihlásení: načítaj program aj stav (napr. po obnovení stránky počas programu)
   try {
     const rows = await fetchAll();
@@ -1042,40 +1063,51 @@ const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
 let events = [];
 async function loadEvents() {
+  $("evErr").hidden = true;
   try {
     const res = await sb.from(TABLE).select("id,data,updated_at");
     if (res.error) throw res.error;
     const rows = res.data || [];
-    const run = {};
-    rows.filter(r => r.id === "state" || r.id.startsWith("state:"))
-        .forEach(r => { run[r.id === "state" ? "" : r.id.slice(6)] = r.data && r.data.mode === "run"; });
+    const run = {}, at = {};
+    rows.filter(r => r.id === "state" || r.id.startsWith("state:")).forEach(r => {
+      const slug = r.id === "state" ? "" : r.id.slice(6);
+      run[slug] = !!(r.data && r.data.mode === "run");
+      at[slug] = r.updated_at || "";
+    });
     events = rows.filter(r => r.id === "setup" || r.id.startsWith("setup:")).map(r => {
       const slug = r.id === "setup" ? "" : r.id.slice(6);
-      return { slug, name: (r.data && r.data.name) || (slug ? slug : "Hlavná akcia"), run: !!run[slug], at: r.updated_at || "" };
+      const d = r.data || {};
+      const last = [r.updated_at || "", at[slug] || ""].sort().pop();
+      return { slug, name: d.name || (slug || "Hlavná akcia"), run: !!run[slug],
+               count: Array.isArray(d.people) ? d.people.length : 0, at: last };
     });
-    if (!events.some(e => e.slug === EV)) events.push({ slug: EV, name: setup.name || (EV || "Hlavná akcia"), run: state.mode === "run", at: "" });
-    events.sort((a, b) => a.name.localeCompare(b.name, "sk"));
-  } catch (e) { $("evErr").textContent = "Zoznam akcií sa nepodarilo načítať."; $("evErr").hidden = false; }
+    events.sort((a, b) => (b.run - a.run) || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0));
+  } catch (e) { $("evErr").textContent = "Zoznam akcií sa nepodarilo načítať. Obnov stránku."; $("evErr").hidden = false; }
   renderEvents();
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear();
 }
 function renderEvents() {
   const L = $("evList");
   L.innerHTML = "";
+  $("evEmpty").hidden = events.length > 0;
   events.forEach(ev => {
     const li = document.createElement("li");
-    if (ev.slug === EV) li.className = "cur";
-    const nm = document.createElement("span"); nm.className = "nm";
-    nm.textContent = ev.slug === EV ? (setup.name || ev.name) : ev.name;
+    const meta = document.createElement("div"); meta.className = "meta";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = ev.name;
     const st = document.createElement("span"); st.className = "st" + (ev.run ? " run" : "");
-    st.textContent = ev.slug === EV ? "otvorená" : (ev.run ? "beží" : "");
-    li.append(nm, st);
-    if (ev.slug !== EV) {
-      const a = document.createElement("button");
-      a.textContent = "Ovládať";
-      a.title = "Otvorí sa v novej karte, táto ostane otvorená";
-      a.onclick = () => window.open(evUrl(ev.slug, "ovladanie"), "_blank");
-      li.append(a);
-    }
+    st.textContent = (ev.run ? "● beží · " : "") + ev.count + (ev.count === 1 ? " rečník" : ev.count >= 2 && ev.count <= 4 ? " rečníci" : " rečníkov") +
+      (ev.at ? " · upravené " + fmtDate(ev.at) : "");
+    meta.append(nm, st);
+    const open = document.createElement("button"); open.className = "primary"; open.textContent = "Otvoriť";
+    const tab = document.createElement("button"); tab.textContent = "Nová karta"; tab.title = "Otvorí akciu v novej karte, aby si mohol ovládať viac akcií naraz";
+    open.onclick = e => { e.stopPropagation(); location.href = evUrl(ev.slug, "ovladanie"); };
+    tab.onclick = e => { e.stopPropagation(); window.open(evUrl(ev.slug, "ovladanie"), "_blank"); };
+    li.onclick = () => { location.href = evUrl(ev.slug, "ovladanie"); };
+    li.append(meta, tab, open);
     L.appendChild(li);
   });
 }
@@ -1084,14 +1116,14 @@ $("evName").oninput = () => {
   setup.name = v;
   // prestávkový text ide s názvom akcie, kým ho autor nezmení na iný
   if (!setup.breakText || setup.breakText === old || (!old && setup.breakText === "Prestávka")) { setup.breakText = v; $("breakText").value = v; }
-  saveSetup(); renderEvents();
+  saveSetup();
 };
 async function createEvent() {
   const name = $("newEvName").value.trim();
   $("evErr").hidden = true;
   if (!name) { $("newEvName").focus(); return; }
   let slug = slugify(name), n = 2;
-  const used = new Set(events.map(e => e.slug));
+  const used = new Set(events.map(e => e.slug).concat(["hlavna"]));
   while (used.has(slug) || slug === "") slug = slugify(name) + "-" + n++;
   $("newEvBtn").disabled = true;
   const doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
@@ -1104,12 +1136,8 @@ async function createEvent() {
   location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
 }
 $("newEvBtn").onclick = createEvent;
-$("cEvBtn").onclick = () => {
-  const sl = $("cEvSlot");
-  sl.hidden = !sl.hidden;
-  $("cEvBtn").textContent = sl.hidden ? "Akcie ▾" : "Akcie ▴";
-  if (!sl.hidden) loadEvents();
-};
+$("cEvBtn").onclick = () => { location.href = homeUrl(); };
+$("toEvents").onclick = () => { location.href = homeUrl(); };
 $("newEvName").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
 
 $("loginForm").addEventListener("submit", async e => {
@@ -1126,6 +1154,7 @@ $("loginForm").addEventListener("submit", async e => {
   session = res.data.session; isOp = true;
   await enterControl();
 });
+$("logoutBtn2").onclick = () => $("logoutBtn").click();
 $("logoutBtn").onclick = async () => {
   await sb.auth.signOut();
   session = null; isOp = false;
@@ -1176,6 +1205,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 g</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 h</div>
 </body>
 </html>
