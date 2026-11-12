@@ -73,6 +73,11 @@ code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1
 
 .item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-block:4px;border-top:1px solid var(--line)}
 .item:first-child{border-top:0}
+.drag{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;color:var(--muted);font-size:22px;line-height:1;padding:8px 4px;margin-left:-4px}
+.drag:hover{color:var(--fg)}
+.item{transition:transform .15s ease;background:var(--panel)}
+.item.dragging{transition:none;position:relative;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.6);border-radius:8px;outline:1px solid var(--accent)}
+.item.dragging .drag{cursor:grabbing}
 .item .name{flex:1;min-width:140px}
 .item .ptitle{flex:1 1 100%;margin-left:32px;font-size:15px;color:#c9ced6}
 .num{width:24px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
@@ -391,7 +396,7 @@ function renderList() {
   people.forEach((p, i) => {
     const row = document.createElement("div");
     row.className = "item";
-    row.innerHTML = `<span class="num">${i + 1}.</span>
+    row.innerHTML = `<span class="drag" title="Potiahni a presuň">⠿</span><span class="num">${i + 1}.</span>
       <input class="name" type="text" placeholder="Meno" aria-label="Meno ${i + 1}">
       <input type="number" min="0" max="999" aria-label="Minúty"> min
       <input type="number" min="0" max="59" aria-label="Sekundy"> s
@@ -411,8 +416,62 @@ function renderList() {
     del.onclick = () => { people.splice(i, 1); saveSetup(true); renderList(); };
     L.appendChild(row);
   });
+  enableDrag(L, (from, to) => { const [it] = people.splice(from, 1); people.splice(to, 0, it); saveSetup(true); renderList(); });
   renderStart();
 }
+/* ---------- Presúvanie mien ťahaním (myš aj prst) ---------- */
+function enableDrag(L, onDrop) {
+  L.querySelectorAll(".drag").forEach(h => {
+    h.onpointerdown = e => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      const rows = [...L.querySelectorAll(".item")];
+      const row = h.closest(".item"), from = rows.indexOf(row);
+      const box = row.getBoundingClientRect();
+      const step = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : box.height;
+      const mids = rows.map(r => { const b = r.getBoundingClientRect(); return b.top + window.scrollY + b.height / 2; });
+      const startY = e.pageY;
+      let to = from, lastY = e.clientY, scrollTimer = null;
+      row.classList.add("dragging");
+      try { h.setPointerCapture(e.pointerId); } catch (err) {}
+      const update = () => {
+        const dy = lastY + window.scrollY - startY;
+        row.style.transform = "translateY(" + dy + "px)";
+        const center = mids[from] + dy;
+        to = mids.filter((m, j) => j !== from && m < center).length;
+        rows.forEach((r, j) => {
+          if (j === from) return;
+          let s = 0;
+          if (from < to && j > from && j <= to) s = -step;
+          if (from > to && j >= to && j < from) s = step;
+          r.style.transform = s ? "translateY(" + s + "px)" : "";
+        });
+      };
+      const autoScroll = () => {
+        const edge = 70;
+        let v = 0;
+        if (lastY < edge) v = -Math.ceil((edge - lastY) / 4);
+        else if (lastY > window.innerHeight - edge) v = Math.ceil((lastY - (window.innerHeight - edge)) / 4);
+        if (v) { window.scrollBy(0, v); update(); }
+      };
+      scrollTimer = setInterval(autoScroll, 16);
+      const move = ev => { lastY = ev.clientY; update(); };
+      const end = () => {
+        clearInterval(scrollTimer);
+        h.removeEventListener("pointermove", move);
+        h.removeEventListener("pointerup", end);
+        h.removeEventListener("pointercancel", end);
+        rows.forEach(r => { r.style.transform = ""; });
+        row.classList.remove("dragging");
+        if (to !== from) onDrop(from, to);
+      };
+      h.addEventListener("pointermove", move);
+      h.addEventListener("pointerup", end);
+      h.addEventListener("pointercancel", end);
+    };
+  });
+}
+
 function renderStart() {
   const total = setup.people.reduce((a, p) => a + p.t, 0);
   $("startBtn").textContent = "ŠTART   ·   spolu " + mmss(total);
