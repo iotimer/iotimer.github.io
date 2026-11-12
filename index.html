@@ -158,6 +158,29 @@ html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
 .evList li .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .evList li .st{font-size:13px;color:var(--muted)}
 .evList li .st.run{color:#34c759}
+.rep{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.rep th,.rep td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.rep th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.rep td.num,.rep th.num{text-align:right;white-space:nowrap}
+.rep tr.brk td{color:var(--muted);font-style:italic}
+.rep .plus{color:#ff8a80;font-weight:600}
+.rep .minus{color:#34c759}
+.rep .sub{display:block;font-size:13px;color:var(--muted);font-style:normal}
+.repWrap{overflow-x:auto;margin-top:10px}
+.repSum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 4px}
+.repSum div{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.repSum b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.repSum span{font-size:13px;color:var(--muted)}
+@media print{
+  body{background:#fff!important;color:#000!important}
+  body *{visibility:hidden}
+  #reportCard,#reportCard *{visibility:visible}
+  #reportCard{position:absolute;left:0;top:0;width:100%;background:#fff!important;border:0!important;color:#000!important}
+  #reportCard .noprint{display:none!important}
+  .rep th,.rep td{border-color:#ccc!important;color:#000!important}
+  .repSum div{border-color:#ccc!important}
+  .ver{display:none}
+}
 .ver{position:fixed;left:8px;bottom:6px;font-size:11px;color:#555;pointer-events:none;z-index:1}
 .corner{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));background:transparent;border:0;color:#fff;opacity:.25;font-size:15px;padding:8px 12px;z-index:6}
 .corner:hover{opacity:.8}
@@ -284,6 +307,21 @@ button.back{font-size:18px;padding:0 18px}
       <button id="evSlugBtn">Zmeniť adresu</button>
     </div>
     <p class="err" id="slugErr" hidden></p>
+  </div>
+
+  <div class="card" id="reportCard" hidden>
+    <h2>Prehľad po akcii</h2>
+    <div class="row noprint" id="repRunRow" hidden>
+      <label class="muted" for="repRun">Spustenie:</label>
+      <select id="repRun"></select>
+    </div>
+    <div id="repTitle" class="muted" style="margin:4px 0 8px"></div>
+    <div class="repSum" id="repSum"></div>
+    <div class="repWrap"><table class="rep" id="repTable"></table></div>
+    <div class="row noprint" style="margin-top:12px">
+      <button id="repCsv">Stiahnuť tabuľku (CSV)</button>
+      <button id="repPrint">Vytlačiť / uložiť PDF</button>
+    </div>
   </div>
 
   <div class="card share">
@@ -599,6 +637,91 @@ function enableDrag(L, onDrop) {
   });
 }
 
+const hms = ms => { const d = new Date(ms); return d.getHours() + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); };
+const dur = sec => { sec = Math.round(Math.abs(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60; return h ? h + ":" + pad(m) + ":" + pad(x) : m + ":" + pad(x); };
+const diffTxt = sec => Math.abs(sec) < 1 ? "0:00" : (sec > 0 ? "+" : "−") + dur(sec);
+function repRows(run) {
+  return run.entries.map(e => {
+    const real = (e.end - e.start) / 1000;
+    return Object.assign({}, e, { real, diff: e.plan ? real - e.plan : null });
+  });
+}
+function renderReport() {
+  const runs = (report && report.runs || []).filter(r => r.entries && r.entries.length);
+  $("reportCard").hidden = !runs.length;
+  if (!runs.length) return;
+  const sel = $("repRun");
+  const keep = sel.value;
+  sel.innerHTML = "";
+  runs.slice().reverse().forEach((r, i) => {
+    const o = document.createElement("option");
+    o.value = String(r.at);
+    const d = new Date(r.at);
+    o.textContent = d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear() + " o " + d.getHours() + ":" + pad(d.getMinutes()) + (i === 0 ? " (posledné)" : "");
+    sel.appendChild(o);
+  });
+  if (keep && runs.some(r => String(r.at) === keep)) sel.value = keep;
+  $("repRunRow").hidden = runs.length < 2;
+  const run = runs.find(r => String(r.at) === sel.value) || runs[runs.length - 1];
+  const rows = repRows(run), sp = rows.filter(r => r.k === "s"), br = rows.filter(r => r.k === "b");
+  const first = rows.length ? Math.min(...rows.map(r => r.start)) : run.at;
+  const last = run.endedAt || (rows.length ? Math.max(...rows.map(r => r.end)) : run.at);
+  const planTalk = sp.reduce((a, r) => a + r.plan, 0), realTalk = sp.reduce((a, r) => a + r.real, 0);
+  const over = sp.filter(r => r.diff > 30).sort((a, b) => b.diff - a.diff);
+  const d0 = new Date(run.at);
+  $("repTitle").textContent = (setup.name || "Akcia") + " · " + d0.getDate() + ". " + (d0.getMonth() + 1) + ". " + d0.getFullYear() + (run.endedAt ? "" : " · program nebol dokončený");
+  const box = (big, small) => '<div><b>' + big + '</b><span>' + small + '</span></div>';
+  let startInfo = hhmm(first);
+  if (run.planStart) {
+    const [h, m] = run.planStart.split(":").map(Number), ps = new Date(run.at); ps.setHours(h, m, 0, 0);
+    const late = Math.round((first - ps.getTime()) / 60000);
+    startInfo += " <span style=\"font-size:14px\">(plán " + run.planStart + (late ? ", " + (late > 0 ? "+" : "−") + Math.abs(late) + " min" : "") + ")</span>";
+  }
+  $("repSum").innerHTML =
+    box(startInfo, "začiatok prvého rečníka") +
+    box(hhmm(last), "koniec") +
+    box(dur((last - first) / 1000), "celkové trvanie") +
+    box(diffTxt(realTalk - planTalk), "rečníci spolu oproti plánu (" + dur(planTalk) + ")") +
+    box(String(over.length) + " / " + sp.length, "prekročili čas o viac ako 30 s");
+  const T = $("repTable");
+  T.innerHTML = "<tr><th>Začiatok</th><th>Rečník</th><th class=num>Plán</th><th class=num>Skutočne</th><th class=num>Rozdiel</th></tr>";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    if (r.k === "b") tr.className = "brk";
+    const c = (txt, cls) => { const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = txt; tr.appendChild(td); return td; };
+    c(hhmm(r.start));
+    const nm = c(r.k === "b" ? "Prestávka" + (r.plan ? " (odpočet)" : "") : r.n);
+    if (r.k === "s" && r.p) { const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = r.p; nm.appendChild(sub); }
+    if (r.adj && r.k === "s") { const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = "čas upravený počas behu o " + diffTxt(r.adj); nm.appendChild(sub); }
+    c(r.plan ? dur(r.plan) : "—", "num");
+    c(dur(r.real), "num");
+    const df = c(r.diff == null ? "—" : diffTxt(r.diff), "num");
+    if (r.diff != null && r.diff > 30) df.classList.add("plus");
+    else if (r.diff != null && r.diff < -30) df.classList.add("minus");
+    T.appendChild(tr);
+  });
+}
+function reportCsv() {
+  const runs = (report.runs || []).filter(r => r.entries && r.entries.length);
+  const run = runs.find(r => String(r.at) === $("repRun").value) || runs[runs.length - 1];
+  if (!run) return;
+  const q = v => { v = String(v == null ? "" : v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const lines = [["Typ", "Meno", "Názov prezentácie", "Začiatok", "Koniec", "Plán (min:s)", "Skutočne (min:s)", "Rozdiel (min:s)", "Úprava počas behu"].join(";")];
+  repRows(run).forEach(r => lines.push([
+    r.k === "b" ? "prestávka" : "rečník", r.k === "b" ? "Prestávka" : r.n, r.p || "", hms(r.start), hms(r.end),
+    r.plan ? dur(r.plan) : "", dur(r.real), r.diff == null ? "" : diffTxt(r.diff).replace("−", "-"), r.adj ? diffTxt(r.adj).replace("−", "-") : ""
+  ].map(q).join(";")));
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  const d = new Date(run.at);
+  a.href = URL.createObjectURL(blob);
+  a.download = "prehlad-" + (EV || "akcia") + "-" + d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+$("repRun").onchange = renderReport;
+$("repCsv").onclick = reportCsv;
+$("repPrint").onclick = () => window.print();
 function renderStart() {
   const total = setup.people.reduce((a, p) => a + p.t, 0);
   const pe = planEnd();
@@ -615,6 +738,7 @@ function renderLang() {
   $("blinkConsole").checked = !!setup.blink;
 }
 function renderSetupFields() {
+  renderReport();
   $("startAt").value = setup.startAt || "";
   $("evName").value = setup.name || (EV ? EV : "");
   $("evHost").textContent = location.host + "/";
@@ -928,10 +1052,27 @@ function setState(n) {
   write(TID, n);
 }
 function canAct() { return isOp && !projector && !viewerFull && state.mode === "run"; }
+/* ---------- Prehľad po akcii: skutočné časy rečníkov a prestávok ---------- */
+const RID = EV ? "report:" + EV : "report";
+let report = { runs: [] };
+const stepKey = s => [s.idx, s.between ? 1 : 0, s.startedAt || 0, s.breakAt || 0].join(":");
+const curRun = () => report.runs[report.runs.length - 1];
+function saveReport() { write(RID, report); }
+function logStep(s, now) {
+  const run = curRun(); if (!run) return;
+  if (!s.between && !s.finished && s.startedAt != null) {
+    const p = setup.people[s.idx] || {};
+    run.entries.push({ k: "s", i: s.idx, n: p.n || "", p: p.p || "", plan: p.t || 0, adj: s.adj || 0, start: s.startedAt, end: now, key: stepKey(s) });
+  } else if (s.between && s.idx >= 0 && s.breakAt) {
+    run.entries.push({ k: "b", i: s.idx, n: setup.breakText || "Prestávka", plan: s.breakSec || 0, adj: s.adj || 0, start: s.breakAt, end: now, key: stepKey(s) });
+  }
+}
 function next() {
   if (!canAct()) return;
   const s = state;
   if (s.finished) { stop(); return; }
+  const now0 = Date.now(), before = curRun() ? curRun().entries.length : 0;
+  logStep(s, now0);
   hist.push(Object.assign({}, s));
   if (hist.length > 300) hist.shift();
   const n = Object.assign({}, s);
@@ -944,12 +1085,20 @@ function next() {
     }
     else { n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }   // bez prestávky: hneď ďalšie meno
   }
-  else { n.finished = true; n.startedAt = null; }
+  else { n.finished = true; n.startedAt = null; if (curRun()) curRun().endedAt = now0; }
+  if (curRun() && (curRun().entries.length !== before || n.finished)) saveReport();
   setState(n);
 }
 function back() {
   if (!canAct() || !hist.length) return;
-  setState(hist.pop());
+  const prev = hist.pop(), run = curRun();
+  if (run) {   // krok späť zruší aj zápis do prehľadu
+    const k = stepKey(prev), len = run.entries.length;
+    run.entries = run.entries.filter(e => e.key !== k);
+    if (!prev.finished && run.endedAt) delete run.endedAt;
+    if (run.entries.length !== len || !prev.finished) saveReport();
+  }
+  setState(prev);
 }
 function adjust(d) {
   if (!canAct() || state.finished) return;
@@ -968,9 +1117,12 @@ function startShow() {
   clearTimeout(setupTimer); write(SID, setup);
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
   hist = [];
+  report.runs.push({ at: Date.now(), planStart: setup.startAt || "", entries: [] });
+  report.runs = report.runs.slice(-5);   // posledných 5 spustení
+  saveReport();
   setState({ mode: "run", idx: -1, between: true, finished: false, startedAt: null, adj: 0 });
 }
-function stop() { hist = []; setState({ mode: "idle" }); }
+function stop() { hist = []; setState({ mode: "idle" }); renderReport(); }
 
 function renderConsole() {
   const s = state;
@@ -1238,6 +1390,13 @@ async function enterControl() {
   } catch (e) {
     showSaveError("Program sa nepodarilo načítať: " + (e.message || "skontroluj pripojenie"));
   }
+  try {
+    let rq = sb.from(TABLE).select("id,data,updated_at");
+    if (rq && typeof rq.eq === "function") rq = rq.eq("id", RID);
+    const rr = await rq;
+    const row = (rr.data || []).find(r => r.id === RID);
+    if (row && row.data && Array.isArray(row.data.runs)) report = row.data;
+  } catch (e) {}
   if (setupDeleted) { location.replace(homeUrl()); return; }   // zmazaná akcia: späť na zoznam (dá sa obnoviť z koša)
   fillLinks();
   renderSetupFields();
@@ -1397,7 +1556,7 @@ async function purgeEvents(list) {
   const slugs = list.map(e => e.slug).filter(Boolean);
   if (!slugs.length) return;
   const ids = [];
-  slugs.forEach(sl => ids.push("setup:" + sl, "state:" + sl));
+  slugs.forEach(sl => ids.push("setup:" + sl, "state:" + sl, "report:" + sl));
   try {
     const all = await sb.from(TABLE).select("id,data");
     (all.data || []).forEach(r => {
@@ -1561,6 +1720,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 n</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 o</div>
 </body>
 </html>
