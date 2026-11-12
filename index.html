@@ -10,9 +10,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="ioTimer">
 <meta name="theme-color" content="#000000">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" type="image/png" href="icon-192.png">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <script>
 /* =========================================================
    NASTAVENIE: sem vlož údaje zo Supabase
@@ -22,7 +22,7 @@ const SUPABASE_URL = "https://ivtgpardcsbftfbqryrd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_6bqMX1xWR6KL4HM-NszHhg_YaBrY_OX";
 </script>
 <!-- vlastná kópia knižnice supabase-js 2.112.4, upravená aj pre staršie prehliadače (Android) -->
-<script src="supabase.min.js"></script>
+<script src="/supabase.min.js"></script>
 <script>
 /* Ak sa stránka do 12 s nenačíta, ukáž dôvod (pre staré tablety a prehliadače) */
 setTimeout(function () {
@@ -132,6 +132,9 @@ html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
 .evList li:hover{border-color:var(--accent-line)}
 .evList li .meta{display:flex;flex-direction:column;flex:1;min-width:0;gap:2px}
 .evList li .nm{font-size:18px}
+.slugBox{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;padding:0 0 0 10px;background:#0d0f13;max-width:100%}
+.slugBox span{color:var(--muted);white-space:nowrap}
+.slugBox input{border:0;background:transparent;padding:10px 10px 10px 0;min-width:0;width:12em;outline:none}
 .evTop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
 .evTop h1{margin:0;flex:1}
 .evList li.cur{border-color:var(--accent-line);background:rgba(79,125,255,.12)}
@@ -222,9 +225,13 @@ button.back{font-size:18px;padding:0 18px}
     <h2>Nová akcia</h2>
     <div class="row">
       <input id="newEvName" class="grow" type="text" placeholder="Názov akcie, napr. Konferencia JARDIN 2026" aria-label="Názov novej akcie">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="muted">Adresa pre divákov:</span>
+      <span class="slugBox"><span id="newEvHost"></span><input id="newEvSlug" type="text" placeholder="jardin" aria-label="Krátka adresa" autocapitalize="off" autocomplete="off" spellcheck="false"></span>
       <button class="primary" id="newEvBtn">+ Vytvoriť akciu</button>
     </div>
-    <p class="muted" style="margin:8px 0 0">Názov sa zobrazí aj ako text počas prestávky. Každá akcia má vlastný program, časomieru a odkazy pre divákov a projektor.</p>
+    <p class="muted" style="margin:8px 0 0">Názov sa zobrazí aj ako text počas prestávky. Krátku adresu si môžeš prepísať (malé písmená bez diakritiky, číslice a pomlčka). Každá akcia má vlastný program, časomieru a odkazy.</p>
     <p class="err" id="evErr" hidden></p>
   </div>
   <div class="card">
@@ -242,6 +249,12 @@ button.back{font-size:18px;padding:0 18px}
     <h2>Názov akcie</h2>
     <input id="evName" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
     <p class="muted" style="margin:8px 0 0">Zobrazuje sa aj ako text počas prestávky, kým ho nižšie nezmeníš.</p>
+    <div class="row" style="margin-top:12px" id="slugRow">
+      <span class="muted">Adresa:</span>
+      <span class="slugBox"><span id="evHost"></span><input id="evSlug" type="text" aria-label="Krátka adresa akcie" autocapitalize="off" autocomplete="off" spellcheck="false"></span>
+      <button id="evSlugBtn">Zmeniť adresu</button>
+    </div>
+    <p class="err" id="slugErr" hidden></p>
   </div>
 
   <div class="card share">
@@ -399,15 +412,23 @@ const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.m
 ["preview", "vScreen", "stageScreen"].forEach(id => $(id).appendChild($("screenTpl").content.cloneNode(true)));
 
 const TABLE = "odpocet";
-// Akcia: ?akcia=slug v adrese. Bez nej = pôvodná (hlavná) akcia s riadkami "setup" a "state".
-const EVP = (new URLSearchParams(location.search).get("akcia") || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+// Akcia: krátka adresa iotimer.github.io/nazov (stránku vtedy podá 404.html = kópia index.html).
+// Staré odkazy ?akcia=nazov fungujú ďalej. Bez názvu = pôvodná (hlavná) akcia s riadkami "setup" a "state".
+const cleanSlug = t => (t || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+const pathSlug = (() => {
+  const seg = decodeURIComponent(location.pathname.replace(/^\/+|\/+$/g, "")).split("/").pop() || "";
+  return /\.html?$/i.test(seg) ? "" : cleanSlug(seg);
+})();
+const EVP = cleanSlug(new URLSearchParams(location.search).get("akcia")) || pathSlug;
+const RESERVED = ["hlavna", "index", "404", "projektor", "ovladanie", "akcie", "supabase", "manifest", "icon", "readme"];
 const EV = EVP === "hlavna" ? "" : EVP;             // "hlavna" = pôvodná akcia (riadky setup / state)
 const isHome = () => route() === "ovladanie" && !EVP; // po prihlásení: zoznam akcií
 const SID = EV ? "setup:" + EV : "setup";
 const TID = EV ? "state:" + EV : "state";
-const evUrl = (slug, hash) => location.origin + location.pathname +
-  (slug ? "?akcia=" + slug : (hash === "ovladanie" ? "?akcia=hlavna" : "")) + (hash ? "#" + hash : "");
-const homeUrl = () => location.origin + location.pathname + "#ovladanie";
+const evUrl = (slug, hash) => location.origin + "/" +
+  (slug ? slug : (hash === "ovladanie" ? "hlavna" : "")) + (hash ? "#" + hash : "");
+const homeUrl = () => location.origin + "/#ovladanie";
+const shortUrl = u => u.replace(/^https?:\/\//, "");
 let sb = null, db = null, isOp = false, session = null;
 let setup = { name: "", people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
 let state = { mode: "idle" };
@@ -550,6 +571,9 @@ function renderLang() {
 }
 function renderSetupFields() {
   $("evName").value = setup.name || (EV ? EV : "");
+  $("evHost").textContent = location.host + "/";
+  $("evSlug").value = EV;
+  $("slugRow").hidden = !EV;   // hlavná akcia má adresu iotimer.github.io bez názvu
   $("defMin").value = Math.floor(setup.def / 60);
   $("defSec").value = setup.def % 60;
   $("breakText").value = setup.breakText;
@@ -961,6 +985,10 @@ setInterval(tick, 200);
 /* ---------- Pripojenie k databáze Supabase ---------- */
 function applySetupDoc(d) {
   d = d || {};
+  if (d.movedTo && EV && cleanSlug(d.movedTo) && cleanSlug(d.movedTo) !== EV) {
+    location.replace(evUrl(cleanSlug(d.movedTo), route()));
+    return;
+  }
   setup = {
     people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "", b: p.b !== false })) : [],
     name: d.name || "",
@@ -1031,11 +1059,13 @@ async function refresh() {
 }
 
 function fillLinks() {
-  $("linkViewer").textContent = evUrl(EV, "");
-  $("linkProjector").textContent = evUrl(EV, "projektor");
+  $("linkViewer").textContent = shortUrl(evUrl(EV, ""));
+  $("linkProjector").textContent = shortUrl(evUrl(EV, "projektor"));
+  $("linkViewer").dataset.url = evUrl(EV, "");
+  $("linkProjector").dataset.url = evUrl(EV, "projektor");
 }
 document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", async () => {
-  const text = $(b.dataset.target).textContent;
+  const el = $(b.dataset.target), text = el.dataset.url || el.textContent;
   try { await navigator.clipboard.writeText(text); b.textContent = "Skopírované"; }
   catch (e) {
     const range = document.createRange(); range.selectNodeContents($(b.dataset.target));
@@ -1067,20 +1097,21 @@ async function enterControl() {
 /* ---------- Viac akcií ---------- */
 const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
-let events = [];
+let events = [], allSlugs = new Set();
 async function loadEvents() {
   $("evErr").hidden = true;
   try {
     const res = await sb.from(TABLE).select("id,data,updated_at");
     if (res.error) throw res.error;
     const rows = res.data || [];
+    allSlugs = new Set(rows.filter(r => r.id.startsWith("setup:")).map(r => r.id.slice(6)));
     const run = {}, at = {};
     rows.filter(r => r.id === "state" || r.id.startsWith("state:")).forEach(r => {
       const slug = r.id === "state" ? "" : r.id.slice(6);
       run[slug] = !!(r.data && r.data.mode === "run");
       at[slug] = r.updated_at || "";
     });
-    events = rows.filter(r => r.id === "setup" || r.id.startsWith("setup:")).map(r => {
+    events = rows.filter(r => (r.id === "setup" || r.id.startsWith("setup:")) && !(r.data && r.data.movedTo)).map(r => {
       const slug = r.id === "setup" ? "" : r.id.slice(6);
       const d = r.data || {};
       const last = [r.updated_at || "", at[slug] || ""].sort().pop();
@@ -1124,13 +1155,33 @@ $("evName").oninput = () => {
   if (!setup.breakText || setup.breakText === old || (!old && setup.breakText === "Prestávka")) { setup.breakText = v; $("breakText").value = v; }
   saveSetup();
 };
+// návrh krátkej adresy: prvé slová názvu, najviac 20 znakov
+function suggestSlug(name) {
+  const parts = slugify(name).split("-").filter(Boolean);
+  let out = "";
+  for (const w of parts) { if ((out ? out.length + 1 : 0) + w.length > 20) break; out = out ? out + "-" + w : w; }
+  return out || parts[0] && parts[0].slice(0, 20) || "akcia";
+}
+function slugProblem(slug, own) {
+  if (!slug || slug.length < 2) return "Adresa musí mať aspoň 2 znaky.";
+  if (slug.length > 40) return "Adresa môže mať najviac 40 znakov.";
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) return "Použi len malé písmená bez diakritiky, číslice a pomlčku.";
+  if (RESERVED.includes(slug)) return "Táto adresa je vyhradená, zvoľ inú.";
+  if (slug !== own && allSlugs.has(slug)) return "Táto adresa už existuje, zvoľ inú.";
+  return "";
+}
+let slugTouched = false;
+$("newEvHost").textContent = location.host + "/";
+$("newEvName").addEventListener("input", () => { if (!slugTouched) $("newEvSlug").value = suggestSlug($("newEvName").value); });
+$("newEvSlug").addEventListener("input", () => { slugTouched = !!$("newEvSlug").value; $("newEvSlug").value = $("newEvSlug").value.toLowerCase().replace(/\s+/g, "-"); });
+$("newEvSlug").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
 async function createEvent() {
   const name = $("newEvName").value.trim();
   $("evErr").hidden = true;
   if (!name) { $("newEvName").focus(); return; }
-  let slug = slugify(name), n = 2;
-  const used = new Set(events.map(e => e.slug).concat(["hlavna"]));
-  while (used.has(slug) || slug === "") slug = slugify(name) + "-" + n++;
+  const slug = cleanSlug($("newEvSlug").value) || suggestSlug(name);
+  const prob = slugProblem(slug, null);
+  if (prob) { $("evErr").textContent = prob; $("evErr").hidden = false; $("newEvSlug").focus(); return; }
   $("newEvBtn").disabled = true;
   const doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
   const stamp = new Date().toISOString();
@@ -1138,10 +1189,30 @@ async function createEvent() {
   const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + slug, data: { mode: "idle" }, updated_at: stamp });
   $("newEvBtn").disabled = false;
   if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo vytvoriť: " + r2.error.message; $("evErr").hidden = false; return; }
-  $("newEvName").value = "";
+  $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false;
   location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
 }
 $("newEvBtn").onclick = createEvent;
+async function renameSlug() {
+  const to = cleanSlug($("evSlug").value);
+  $("slugErr").hidden = true;
+  if (to === EV) return;
+  if (!allSlugs.size) await loadEvents();
+  const prob = slugProblem(to, EV);
+  if (prob) { $("slugErr").textContent = prob; $("slugErr").hidden = false; return; }
+  $("evSlugBtn").disabled = true;
+  clearTimeout(setupTimer);
+  const stamp = new Date().toISOString();
+  const r1 = await sb.from(TABLE).upsert({ id: "setup:" + to, data: setup, updated_at: stamp });
+  const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + to, data: state, updated_at: stamp });
+  // stará adresa presmeruje na novú (staré odkazy fungujú ďalej)
+  const r3 = r2.error ? r2 : await sb.from(TABLE).upsert({ id: SID, data: { movedTo: to, name: setup.name }, updated_at: stamp });
+  $("evSlugBtn").disabled = false;
+  if (r3.error) { $("slugErr").textContent = "Adresu sa nepodarilo zmeniť: " + r3.error.message; $("slugErr").hidden = false; return; }
+  location.replace(evUrl(to, "ovladanie"));
+}
+$("evSlugBtn").onclick = renameSlug;
+$("evSlug").addEventListener("keydown", e => { if (e.key === "Enter") renameSlug(); });
 $("cEvBtn").onclick = () => { location.href = homeUrl(); };
 $("toEvents").onclick = () => { location.href = homeUrl(); };
 $("newEvName").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
@@ -1211,6 +1282,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 i</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 j</div>
 </body>
 </html>

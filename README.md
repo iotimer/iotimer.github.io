@@ -11,13 +11,15 @@ Funguje úplne bez Claude. Potrebuješ dva bezplatné účty: **Supabase** (data
 ## Viac akcií naraz
 
 Po prihlásení na `#ovladanie` sa zobrazí zoznam **Akcie**: vytvoríš novú akciu (názov sa zobrazuje aj ako text prestávky) alebo otvoríš existujúcu a nastavuješ jej časomieru.
-Každá akcia má vlastný program, stav a odkazy s `?akcia=nazov`, napr.:
-- diváci: `https://iotimer.github.io/?akcia=skolenie`
-- projektor: `https://iotimer.github.io/?akcia=skolenie#projektor`
-- ovládanie: `https://iotimer.github.io/?akcia=skolenie#ovladanie`
+Každá akcia má vlastný program, stav a odkazy s krátkou adresou `iotimer.github.io/nazov`, napr.:
+- diváci: `https://iotimer.github.io/skolenie`
+- projektor: `https://iotimer.github.io/skolenie#projektor`
+- ovládanie: `https://iotimer.github.io/skolenie#ovladanie`
 
-Odkazy pre divákov a projektor bez `?akcia=` patria hlavnej (pôvodnej) akcii; jej ovládanie je `?akcia=hlavna#ovladanie`. V databáze sú riadky `setup:nazov` a `state:nazov`.
+Odkazy pre divákov a projektor bez `?akcia=` patria hlavnej (pôvodnej) akcii; jej ovládanie je `iotimer.github.io/hlavna#ovladanie`. V databáze sú riadky `setup:nazov` a `state:nazov`.
 Viac akcií naraz ovládaš v samostatných kartách prehliadača alebo na rôznych zariadeniach.
+
+**Dôležité:** krátke adresy fungujú vďaka súboru `404.html`, ktorý je presná kópia `index.html`. Pri každej úprave nahraj na GitHub oba súbory.
 
 ## 1. Supabase (databáza), asi 10 minút
 

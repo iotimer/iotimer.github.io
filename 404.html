@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ioTimer – odpočet naživo</title>
+<!-- iPhone/iPad: po „Pridať na plochu“ sa otvára na celú obrazovku bez lišty Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ioTimer">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<script>
+/* =========================================================
+   NASTAVENIE: sem vlož údaje zo Supabase
+   (Project Settings → API: Project URL a anon / publishable key)
+   ========================================================= */
+const SUPABASE_URL = "https://ivtgpardcsbftfbqryrd.supabase.co";
+const SUPABASE_KEY = "sb_publishable_6bqMX1xWR6KL4HM-NszHhg_YaBrY_OX";
+</script>
+<!-- vlastná kópia knižnice supabase-js 2.112.4, upravená aj pre staršie prehliadače (Android) -->
+<script src="/supabase.min.js"></script>
+<script>
+/* Ak sa stránka do 12 s nenačíta, ukáž dôvod (pre staré tablety a prehliadače) */
+setTimeout(function () {
+  var l = document.getElementById("loading");
+  if (!l || l.hidden) return;
+  var m = navigator.userAgent.match(/Chrome\/(\d+)/), v = m ? +m[1] : 0, d = new Date();
+  var t = "Stránka sa nespustila. ";
+  if (v && v < 58) t += "Prehliadač Chrome " + v + " je príliš starý, aktualizuj ho v Obchode Play. ";
+  else if (!window.supabase) t += "Nenačítala sa knižnica databázy, skontroluj internet. ";
+  t += "Skontroluj aj dátum a čas v zariadení (teraz ukazuje " + d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear() + " " + d.getHours() + ":" + ("0" + d.getMinutes()).slice(-2) + ").";
+  var p = l.getElementsByTagName("p")[0]; if (p) p.textContent = t;
+}, 12000);
+</script>
+<style>
+/* Layout: divák (bez prihlásenia) = časomiera + program; #ovladanie = prihlásenie a ovládanie; #projektor = len časomiera; autor = nastavenie programu, potom ovládací panel s náhľadom; divák cez odkaz = bežiaca časomiera + program; #projektor = len časomiera na celú obrazovku */
+:root{
+  --bg:#000; --panel:#15171c; --line:#2a2e36; --fg:#fff; --muted:#9aa3b0;
+  --accent:#4f7dff; --accent-soft:#121a2c; --accent-line:#34508f;
+  --red:#ff3b30; --over:#400000; --ok:#30d158; --warn:#ff9f0a; --note:#ffd60a;
+  --f:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f);font-size:17px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+*{box-sizing:border-box}
+.wrap{max-width:800px;margin:0 auto;padding-block:24px 60px;display:flex;flex-direction:column;gap:18px}
+h1{margin:0;font-size:30px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{margin:0;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+input,textarea{font:inherit;color:var(--fg);background:#0b0c0f;border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+input[type=number]{width:70px;text-align:right}
+textarea{width:100%;min-height:90px;resize:vertical}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#20242c;color:var(--fg);padding:10px 14px}
+button:hover{border-color:#444b57}
+button.primary{background:var(--accent);border-color:var(--accent);font-weight:700;font-size:20px;padding:16px}
+button.danger{color:var(--red)}
+button.icon{background:transparent;border:0;color:var(--muted);font-size:20px;padding:6px 10px}
+button:disabled{opacity:.3;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+.muted{color:var(--muted);font-size:14px;margin:0;line-height:1.5}
+.share{border-color:var(--accent-line);background:var(--accent-soft)}
+.share b{color:#fff}
+.status{font-size:14px;color:var(--warn);margin:0}
+code{background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:14px}
+
+.item{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-block:4px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.drag{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;color:var(--muted);font-size:22px;line-height:1;padding:8px 4px;margin-left:-4px}
+.drag:hover{color:var(--fg)}
+.item{transition:transform .15s ease;background:var(--panel)}
+.item.dragging{transition:none;position:relative;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.6);border-radius:8px;outline:1px solid var(--accent)}
+.item.dragging .drag{cursor:grabbing}
+.item .name{flex:1;min-width:140px}
+.item .brk{flex:1 1 100%;margin-left:32px;display:flex;align-items:center;gap:8px;font-size:15px;color:var(--muted);cursor:pointer}
+.item .brk input{width:20px;height:20px;margin:0;accent-color:var(--accent)}
+.item .brk.on{color:var(--fg)}
+.brkAll{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.item .ptitle{flex:1 1 100%;margin-left:32px;font-size:15px;color:#c9ced6}
+.num{width:24px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:flex-start}
+.seg button{border:0;border-radius:0;background:transparent;padding:10px 18px}
+.seg button[aria-pressed="true"]{background:var(--accent);font-weight:700}
+.fileBtn{display:inline-block;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:#20242c;padding:10px 14px}
+.fileBtn input{display:none}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.csvMsg{font-size:14px;margin:0}
+.csvMsg.ok{color:var(--ok)}
+.csvMsg.err{color:var(--red)}
+
+.center{position:fixed;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;flex-direction:column;gap:12px}
+.center h2{margin:0;font-size:28px}
+
+/* obrazovka s časomierou: písmo sa riadi veľkosťou rámu, takže rovnako vyzerá na projektore aj v náhľade */
+.screen{container-type:size;width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;background:#000;color:#fff;padding:2vh 2vw;padding:2cqh 2cqw;user-select:none;-webkit-user-select:none;overflow:hidden}
+.screen.over{background:var(--over)}
+/* bloky na celú šírku: meno a názov sa zalamujú podľa obrazovky, nie podľa šírky čísel, takže sa pri odpočte nehýbu */
+.v-idle,.v-break,.v-person,.v-end{width:100%;display:flex;flex-direction:column;align-items:center}
+.s-title,.s-name{width:100%;text-align:center}
+.s-clock{display:inline-block;text-align:center}
+.s-title{font-size:2.8vw;font-size:min(2.8vw,3.6vh);font-size:min(2.8cqw,3.6cqh);font-weight:500;color:var(--muted);margin-bottom:1.5vh;margin-bottom:1.5cqh;max-width:90vw;max-width:90cqw;overflow-wrap:anywhere;line-height:1.3}
+.s-name{font-size:6vw;font-size:min(6vw,8vh);font-size:min(6cqw,8cqh);font-weight:600;margin-bottom:5vh;margin-bottom:5cqh;max-width:95vw;max-width:95cqw;overflow-wrap:anywhere}
+.s-clock{font-size:29vw;font-size:min(30vw,60vh);font-size:min(30cqw,60cqh);font-weight:800;line-height:.95;font-variant-numeric:tabular-nums;white-space:nowrap}
+.screen.over .s-clock{color:var(--red)}
+/* záporný čas má o znak viac, nech sa zmestí na šírku */
+/* rovnaká veľkosť číslic pred aj po vypršaní; mínus je menší, aby sa zmestil */
+.s-clock .mn{font-size:.6em;display:inline-block;vertical-align:.32em;margin-right:.04em}
+/* blikanie časomiery po vypršaní (dá sa zapnúť v nastavení) */
+.screen.over.blink .s-clock,.screen.over.blink .s-status{animation:iotBlink 1s steps(1,end) infinite}
+@keyframes iotBlink{50%{opacity:.12}}
+.blinkRow{display:flex;gap:10px;align-items:center}
+.blinkRow input{width:20px;height:20px;accent-color:var(--accent)}
+.s-status{font-size:4.5vw;font-size:min(4.5vw,6vh);font-size:min(4.5cqw,6cqh);font-weight:600;color:var(--red);min-height:1.3em}
+.s-break{font-size:7vw;font-size:min(7vw,10vh);font-size:min(7cqw,10cqh);font-weight:600;max-width:95vw;max-width:95cqw;overflow-wrap:anywhere}
+.s-time{font-size:20vw;font-size:min(20vw,30vh);font-size:min(20cqw,30cqh);font-weight:800;color:#b3b3b3;font-variant-numeric:tabular-nums;margin-top:4vh;margin-top:4cqh}
+.s-end{font-size:10vw;font-size:min(10vw,14vh);font-size:min(10cqw,14cqh);font-weight:800}
+.s-wait{font-size:4vw;font-size:min(4vw,6vh);font-size:min(4cqw,6cqh);color:var(--muted)}
+#stageScreen .v-idle{display:none}
+
+#stage{position:fixed;top:0;right:0;bottom:0;left:0;background:#000;z-index:5;overflow:hidden}
+html.stageOn,html.stageOn body{overflow:hidden!important;height:100%;margin:0}
+.evList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.evList li{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;cursor:pointer}
+.evList li:hover{border-color:var(--accent-line)}
+.evList li .meta{display:flex;flex-direction:column;flex:1;min-width:0;gap:2px}
+.evList li .nm{font-size:18px}
+.slugBox{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:10px;padding:0 0 0 10px;background:#0d0f13;max-width:100%}
+.slugBox span{color:var(--muted);white-space:nowrap}
+.slugBox input{border:0;background:transparent;padding:10px 10px 10px 0;min-width:0;width:12em;outline:none}
+.evTop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.evTop h1{margin:0;flex:1}
+.evList li.cur{border-color:var(--accent-line);background:rgba(79,125,255,.12)}
+.evList li .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.evList li .st{font-size:13px;color:var(--muted)}
+.evList li .st.run{color:#34c759}
+.ver{position:fixed;left:8px;bottom:6px;font-size:11px;color:#555;pointer-events:none;z-index:1}
+.corner{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));background:transparent;border:0;color:#fff;opacity:.25;font-size:15px;padding:8px 12px;z-index:6}
+.corner:hover{opacity:.8}
+.stageHint{position:fixed;left:50%;bottom:calc(6% + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:rgba(20,24,32,.92);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:15px;max-width:90%;text-align:center;z-index:6}
+
+/* ovládací panel a pohľad pre divákov */
+.panelWrap{max-width:1240px;margin:0 auto;padding-block:16px 40px;display:flex;flex-direction:column;gap:14px}
+.cbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cbar strong{font-size:20px}
+.pill{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid #1f5f33;color:var(--ok)}
+.cgrid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.cgrid{grid-template-columns:1fr}}
+.cleft,.cright{display:flex;flex-direction:column;gap:12px;min-width:0}
+.plabel{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.previewBox{aspect-ratio:16/9;width:100%;max-width:100%;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+/* starší prehliadač bez aspect-ratio */
+@supports not (aspect-ratio:1){.previewBox{position:relative;height:0;padding-top:56.25%}.previewBox>.screen{position:absolute;top:0;left:0}}
+.navRow{display:grid;grid-template-columns:auto 1fr;gap:10px}
+.startRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:600px){.startRow{grid-template-columns:1fr}}
+button.alt{background:#1b2a4d;border-color:var(--accent-line)}
+button.next{font-size:22px;padding:20px;min-width:0}
+button.next .nx{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2}
+@media (max-width:600px){button.next{font-size:17px;padding:12px 14px}button.back{font-size:16px;padding:0 12px}}
+button.back{font-size:18px;padding:0 18px}
+.adjRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.adjRow button{min-width:74px;font-variant-numeric:tabular-nums}
+.adjInfo{color:var(--note);font-size:14px}
+.upName{font-size:21px;font-weight:700;overflow-wrap:anywhere}
+.upMeta{color:var(--muted);font-size:15px}
+.prog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:56vh;overflow:auto}
+.prog li{display:block;position:relative;overflow:hidden;border-radius:8px;flex-shrink:0}
+.prog .rowg{position:relative;display:grid;grid-template-columns:62px 1fr;gap:8px;padding:8px 10px}
+.prog li.cur{background:var(--accent-soft);outline:1px solid var(--accent-line)}
+/* priehľadná lišta pri aktuálnom mene: plní sa, ako ubieha čas */
+.prog li .bar{position:absolute;top:0;right:0;bottom:0;left:0;transform-origin:0 50%;transform:scaleX(0);background:rgba(79,125,255,.30);pointer-events:none}
+.prog li.over .bar{background:rgba(255,59,48,.32)}
+.prog li.cur .t{color:#fff;font-weight:700}
+.prog li.over .t{color:var(--red)}
+.prog li.done{opacity:.45}
+.prog .t{font-variant-numeric:tabular-nums;color:var(--muted)}
+.prog .pn{overflow-wrap:anywhere}
+.prog .pt{display:block;font-size:13px;color:var(--muted)}
+.login{max-width:420px;margin:10vh auto 0;display:flex;flex-direction:column;gap:12px}
+.login input{width:100%}
+.err{color:var(--red);font-size:14px;margin:0}
+.pill.wait{border-color:#6b4a12;color:var(--warn)}
+.linkRow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.linkRow code{flex:1;min-width:0;overflow-wrap:anywhere;padding:8px 10px}
+[hidden]{display:none!important}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<div class="center" id="loading">
+  <h2>Odpočet naživo</h2>
+  <p class="muted">Pripája sa…</p>
+</div>
+
+<div class="center" id="noaccess" hidden>
+  <h2>Odpočet sa nedá zobraziť</h2>
+  <p class="muted" id="noaccessText">Chýba nastavenie pripojenia k databáze. Doplň SUPABASE_URL a SUPABASE_KEY na začiatku súboru index.html.</p>
+</div>
+
+<!-- AUTOR: prihlásenie -->
+<div class="wrap" id="login" hidden>
+  <form class="card login" id="loginForm">
+    <h2>Ovládanie odpočtu</h2>
+    <p class="muted">Prihlás sa účtom, ktorý si vytvoril v Supabase. Diváci sa prihlasovať nemusia.</p>
+    <input id="email" type="email" autocomplete="username" placeholder="E-mail" aria-label="E-mail" required>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Heslo" aria-label="Heslo" required>
+    <button class="primary" type="submit" id="loginBtn">Prihlásiť sa</button>
+    <p class="err" id="loginErr" hidden></p>
+  </form>
+</div>
+
+<!-- AUTOR: zoznam akcií (hneď po prihlásení) -->
+<div class="wrap" id="events" hidden>
+  <div class="evTop"><h1>Akcie</h1><button id="logoutBtn2">Odhlásiť sa</button></div>
+  <div class="card">
+    <h2>Nová akcia</h2>
+    <div class="row">
+      <input id="newEvName" class="grow" type="text" placeholder="Názov akcie, napr. Konferencia JARDIN 2026" aria-label="Názov novej akcie">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="muted">Adresa pre divákov:</span>
+      <span class="slugBox"><span id="newEvHost"></span><input id="newEvSlug" type="text" placeholder="jardin" aria-label="Krátka adresa" autocapitalize="off" autocomplete="off" spellcheck="false"></span>
+      <button class="primary" id="newEvBtn">+ Vytvoriť akciu</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0">Názov sa zobrazí aj ako text počas prestávky. Krátku adresu si môžeš prepísať (malé písmená bez diakritiky, číslice a pomlčka). Každá akcia má vlastný program, časomieru a odkazy.</p>
+    <p class="err" id="evErr" hidden></p>
+  </div>
+  <div class="card">
+    <h2>Moje akcie</h2>
+    <ul class="evList" id="evList"></ul>
+    <p class="muted" id="evEmpty" hidden>Zatiaľ žiadna akcia. Vytvor prvú vyššie.</p>
+  </div>
+</div>
+
+<!-- AUTOR: nastavenie programu -->
+<div class="wrap" id="setup" hidden>
+  <h1 id="sTitle">Odpočet naživo</h1>
+  <div class="row" style="margin-bottom:4px"><button id="toEvents">← Všetky akcie</button></div>
+  <div class="card">
+    <h2>Názov akcie</h2>
+    <input id="evName" type="text" placeholder="Názov akcie" aria-label="Názov akcie">
+    <p class="muted" style="margin:8px 0 0">Zobrazuje sa aj ako text počas prestávky, kým ho nižšie nezmeníš.</p>
+    <div class="row" style="margin-top:12px" id="slugRow">
+      <span class="muted">Adresa:</span>
+      <span class="slugBox"><span id="evHost"></span><input id="evSlug" type="text" aria-label="Krátka adresa akcie" autocapitalize="off" autocomplete="off" spellcheck="false"></span>
+      <button id="evSlugBtn">Zmeniť adresu</button>
+    </div>
+    <p class="err" id="slugErr" hidden></p>
+  </div>
+
+  <div class="card share">
+    <h2>Odkazy</h2>
+    <p class="muted"><b>Pre divákov</b>: vidia bežiacu časomieru a program, nič nemôžu meniť a nemusia sa prihlasovať.</p>
+    <div class="linkRow"><code id="linkViewer"></code><button class="copy" data-target="linkViewer">Kopírovať</button></div>
+    <p class="muted"><b>Pre projektor</b>: otvor ho na zariadení pri projektore, ukáže sa iba časomiera. Ťuknutím zapneš celú obrazovku.</p>
+    <div class="linkRow"><code id="linkProjector"></code><button class="copy" data-target="linkProjector">Kopírovať</button></div>
+    <div class="row"><button id="asProjector1">Táto obrazovka ako projektor</button><span class="grow"></span><button id="logoutBtn">Odhlásiť sa</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Poradie a časy</h2>
+    <div id="list"></div>
+    <div class="row">
+      <input id="newName" class="grow" type="text" placeholder="Nové meno" aria-label="Nové meno">
+      <button id="addBtn">Pridať</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Načítať zoznam z CSV tabuľky</h2>
+    <div class="drop" id="drop">
+      <div class="row" style="justify-content:center">
+        <label class="fileBtn">Vybrať CSV súbor<input id="csvInput" type="file" accept=".csv,.txt,text/csv,text/plain"></label>
+        <span class="muted">alebo ho sem pretiahni</span>
+      </div>
+    </div>
+    <div class="row">
+      <label class="row"><input type="radio" name="csvMode" id="csvReplace" checked> Nahradiť zoznam</label>
+      <label class="row"><input type="radio" name="csvMode" id="csvAppend"> Pridať na koniec</label>
+    </div>
+    <p class="muted">Prvý stĺpec je meno, druhý čas v minútach (<code>3</code>, <code>2,5</code>) alebo ako <code>3:30</code>, tretí nepovinný názov prezentácie. Riadok s nadpismi sa preskočí.</p>
+    <p class="csvMsg" id="csvMsg" hidden></p>
+  </div>
+
+  <div class="card">
+    <h2>Predvolený čas pre nové mená</h2>
+    <div class="row">
+      <input id="defMin" type="number" min="0" max="999" aria-label="Minúty"> min
+      <input id="defSec" type="number" min="0" max="59" aria-label="Sekundy"> s
+      <button id="applyAll">Nastaviť všetkým</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Text počas prestávky medzi menami</h2>
+    <p class="muted" style="margin:0 0 8px">Kde bude prestávka, zaškrtneš pri každom mene („prestávka po tomto mene“). Bez prestávky ide ďalší rečník hneď za predchádzajúcim.</p>
+    <input id="breakText" type="text" placeholder="Napríklad: Prestávka" aria-label="Text počas prestávky">
+    <div class="brkAll"><button id="brkAllOn">Prestávka po každom mene</button><button id="brkAllOff">Bez prestávok</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Nápis po vypršaní času</h2>
+    <div class="seg" role="group" aria-label="Nápis po vypršaní času">
+      <button id="langSk" aria-pressed="true">Čas vypršal</button>
+      <button id="langEn" aria-pressed="false">Time's up</button>
+    </div>
+    <label class="blinkRow"><input type="checkbox" id="blinkSetup"> Blikať časomierou, keď čas vyprší a beží do mínusu</label>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="danger" id="clearBtn">Vymazať celý zoznam</button>
+      <span id="clearAsk" hidden>Naozaj? <button class="danger" id="clearYes">Áno, vymazať</button> <button id="clearNo">Zrušiť</button></span>
+    </div>
+  </div>
+
+  <div class="startRow">
+    <button class="primary" id="startBtn">ŠTART</button>
+    <button class="primary alt" id="startProjBtn">ŠTART s projektorom</button>
+  </div>
+  <p class="muted"><b>ŠTART s projektorom</b> otvorí druhé okno s časomierou: presuň ho na projektor alebo rozšírenú obrazovku a ťukni doň, zapne sa celá obrazovka. Ovládanie ostane tu.</p>
+  <p class="status" id="popupMsg" hidden></p>
+  <p class="status" id="saveStatus" hidden></p>
+</div>
+
+<!-- AUTOR: ovládací panel počas programu -->
+<div class="panelWrap" id="console" hidden>
+  <div class="cbar">
+    <strong>Ovládanie<span id="cEvName" class="muted" style="font-weight:600"></span></strong>
+    <span class="pill" id="opPill">Naživo</span>
+    <span class="grow"></span>
+    <button id="cEvBtn">← Akcie</button>
+    <button id="openProjBtn">Otvoriť okno pre projektor</button>
+    <button class="danger" id="cQuit">Ukončiť</button>
+    <span id="cQuitAsk" hidden>Ukončiť program? <button class="danger" id="cQuitYes">Áno</button> <button id="cQuitNo">Nie</button></span>
+  </div>
+  <div class="cgrid">
+    <div class="cleft">
+      <div class="plabel">Čo vidia ostatní</div>
+      <div class="previewBox"><div class="screen" id="preview"></div></div>
+      <div class="navRow">
+        <button class="back" id="backBtn" title="Vrátiť posledný krok">◀ Späť</button>
+        <button class="primary next" id="nextBtn">Ďalej</button>
+      </div>
+      <div class="adjRow">
+        <span class="muted">Upraviť čas:</span>
+        <button class="adj" data-d="-60">−1 min</button>
+        <button class="adj" data-d="-30">−30 s</button>
+        <button class="adj" data-d="30">+30 s</button>
+        <button class="adj" data-d="60">+1 min</button>
+        <span class="adjInfo" id="adjInfo"></span>
+      </div>
+      <label class="blinkRow"><input type="checkbox" id="blinkConsole"> Blikať časomierou po vypršaní času</label>
+      <p class="muted">Klávesy: medzerník, Enter alebo šípka doprava = ďalej, šípka doľava = späť, šípka hore/dole = ±30 s, + / − = ±1 min. Prezentačný ovládač funguje tiež.</p>
+      <p class="status" id="saveStatus2" hidden></p>
+    </div>
+    <div class="cright">
+      <div class="card"><h2>Nasleduje</h2><div id="upNext"></div></div>
+      <div class="card"><h2>Program</h2><ol class="prog" id="prog"></ol></div>
+    </div>
+  </div>
+</div>
+
+<!-- DIVÁK: časomiera + program -->
+<div class="panelWrap" id="viewer" hidden>
+  <div class="cbar">
+    <strong id="vEvName">Odpočet</strong>
+    <span class="pill wait" id="vPill">Pripája sa…</span>
+    <span class="grow"></span>
+    <button id="vFull">Len časomiera</button>
+  </div>
+  <div class="cgrid">
+    <div class="cleft">
+      <div class="previewBox"><div class="screen" id="vScreen"></div></div>
+    </div>
+    <div class="cright">
+      <div class="card"><h2>Nasleduje</h2><div id="vUp"></div></div>
+      <div class="card"><h2>Program</h2><ol class="prog" id="vProg"></ol></div>
+    </div>
+  </div>
+</div>
+
+<!-- Len časomiera na celú obrazovku (projektor) -->
+<div id="stage" hidden>
+  <div class="screen" id="stageScreen"></div>
+  <button class="corner" id="stageExit">✕ Zavrieť</button>
+  <div class="stageHint" id="stageHint" hidden>Ťukni sem pre celú obrazovku</div>
+</div>
+
+<template id="screenTpl">
+  <div class="v-idle"><div class="s-wait">Program ešte nezačal</div></div>
+  <div class="v-break" hidden><div class="s-break"></div><div class="s-time"></div></div>
+  <div class="v-person" hidden><div class="s-title"></div><div class="s-name"></div><div class="s-clock"></div><div class="s-status"></div></div>
+  <div class="v-end" hidden><div class="s-end">Koniec</div></div>
+</template>
+
+
+<script>
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const mmss = s => Math.floor(s / 60) + ":" + pad(s % 60);
+const toSec = (m, s) => Math.max(0, parseInt(m) || 0) * 60 + Math.min(59, Math.max(0, parseInt(s) || 0));
+["preview", "vScreen", "stageScreen"].forEach(id => $(id).appendChild($("screenTpl").content.cloneNode(true)));
+
+const TABLE = "odpocet";
+// Akcia: krátka adresa iotimer.github.io/nazov (stránku vtedy podá 404.html = kópia index.html).
+// Staré odkazy ?akcia=nazov fungujú ďalej. Bez názvu = pôvodná (hlavná) akcia s riadkami "setup" a "state".
+const cleanSlug = t => (t || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+const pathSlug = (() => {
+  const seg = decodeURIComponent(location.pathname.replace(/^\/+|\/+$/g, "")).split("/").pop() || "";
+  return /\.html?$/i.test(seg) ? "" : cleanSlug(seg);
+})();
+const EVP = cleanSlug(new URLSearchParams(location.search).get("akcia")) || pathSlug;
+const RESERVED = ["hlavna", "index", "404", "projektor", "ovladanie", "akcie", "supabase", "manifest", "icon", "readme"];
+const EV = EVP === "hlavna" ? "" : EVP;             // "hlavna" = pôvodná akcia (riadky setup / state)
+const isHome = () => route() === "ovladanie" && !EVP; // po prihlásení: zoznam akcií
+const SID = EV ? "setup:" + EV : "setup";
+const TID = EV ? "state:" + EV : "state";
+const evUrl = (slug, hash) => location.origin + "/" +
+  (slug ? slug : (hash === "ovladanie" ? "hlavna" : "")) + (hash ? "#" + hash : "");
+const homeUrl = () => location.origin + "/#ovladanie";
+const shortUrl = u => u.replace(/^https?:\/\//, "");
+let sb = null, db = null, isOp = false, session = null;
+let setup = { name: "", people: [], def: 180, breakText: "Prestávka", english: false, blink: false };
+let state = { mode: "idle" };
+let hist = [];                                     // kroky na vrátenie (len u autora)
+const route = () => location.hash.replace("#", ""); // "", "ovladanie", "projektor"
+let projector = route() === "projektor";           // táto obrazovka = len časomiera
+let viewerFull = false;                            // divák si zapol len časomieru
+const lastUpdated = {};
+
+/* ---------- Zápisy do databázy: vždy jeden naraz ---------- */
+let chain = Promise.resolve();
+function showSaveError(t) {
+  ["saveStatus", "saveStatus2"].forEach(id => { $(id).textContent = t; $(id).hidden = !t; });
+}
+function write(id, data) {
+  const stamp = new Date().toISOString();
+  lastUpdated[id] = stamp;
+  chain = chain
+    .then(() => sb.from(TABLE).upsert({ id, data, updated_at: stamp }))
+    .then(res => {
+      if (res && res.error) throw res.error;
+      showSaveError("");
+    })
+    .catch(e => {
+      const msg = e && e.message ? e.message : "skontroluj pripojenie";
+      showSaveError("Uloženie zlyhalo (" + msg + "). Skús to znova, prípadne sa odhlás a prihlás.");
+    });
+  return chain;
+}
+let setupTimer = null;
+function saveSetup(now) {
+  clearTimeout(setupTimer);
+  if (now) { write(SID, setup); return; }
+  setupTimer = setTimeout(() => write(SID, setup), 600);
+}
+
+/* ---------- Zoznam (autor) ---------- */
+function renderList() {
+  const L = $("list");
+  L.innerHTML = "";
+  const people = setup.people;
+  if (!people.length) L.innerHTML = '<p class="muted">Zoznam je prázdny. Pridaj meno nižšie alebo načítaj CSV tabuľku.</p>';
+  people.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "item";
+    row.innerHTML = `<span class="drag" title="Potiahni a presuň">⠿</span><span class="num">${i + 1}.</span>
+      <input class="name" type="text" placeholder="Meno" aria-label="Meno ${i + 1}">
+      <input type="number" min="0" max="999" aria-label="Minúty"> min
+      <input type="number" min="0" max="59" aria-label="Sekundy"> s
+      <button class="icon" title="Hore" ${i === 0 ? "disabled" : ""}>↑</button>
+      <button class="icon" title="Dole" ${i === people.length - 1 ? "disabled" : ""}>↓</button>
+      <button class="icon" title="Zmazať">×</button>
+      <input class="ptitle" type="text" placeholder="Názov prezentácie (nepovinné)" aria-label="Názov prezentácie ${i + 1}">
+      ${i < setup.people.length - 1 ? '<label class="brk"><input type="checkbox"> prestávka po tomto mene</label>' : ""}`;
+    const [nI, mI, sI, tI] = row.querySelectorAll("input");
+    nI.value = p.n; mI.value = Math.floor(p.t / 60); sI.value = p.t % 60; tI.value = p.p || "";
+    nI.oninput = () => { p.n = nI.value; saveSetup(); };
+    tI.oninput = () => { p.p = tI.value; saveSetup(); };
+    const upd = () => { p.t = toSec(mI.value, sI.value); saveSetup(); renderStart(); };
+    mI.oninput = upd; sI.oninput = upd;
+    const bI = row.querySelector(".brk input");
+    if (bI) {
+      bI.checked = p.b !== false;
+      bI.parentNode.classList.toggle("on", bI.checked);
+      bI.onchange = () => { p.b = bI.checked; bI.parentNode.classList.toggle("on", bI.checked); saveSetup(true); };
+    }
+    const [up, down, del] = row.querySelectorAll("button");
+    up.onclick = () => { [people[i - 1], people[i]] = [people[i], people[i - 1]]; saveSetup(true); renderList(); };
+    down.onclick = () => { [people[i + 1], people[i]] = [people[i], people[i + 1]]; saveSetup(true); renderList(); };
+    del.onclick = () => { people.splice(i, 1); saveSetup(true); renderList(); };
+    L.appendChild(row);
+  });
+  enableDrag(L, (from, to) => { const [it] = people.splice(from, 1); people.splice(to, 0, it); saveSetup(true); renderList(); });
+  renderStart();
+}
+/* ---------- Presúvanie mien ťahaním (myš aj prst) ---------- */
+function enableDrag(L, onDrop) {
+  L.querySelectorAll(".drag").forEach(h => {
+    h.onpointerdown = e => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      const rows = [...L.querySelectorAll(".item")];
+      const row = h.closest(".item"), from = rows.indexOf(row);
+      const box = row.getBoundingClientRect();
+      const step = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : box.height;
+      const mids = rows.map(r => { const b = r.getBoundingClientRect(); return b.top + window.scrollY + b.height / 2; });
+      const startY = e.pageY;
+      let to = from, lastY = e.clientY, scrollTimer = null;
+      row.classList.add("dragging");
+      try { h.setPointerCapture(e.pointerId); } catch (err) {}
+      const update = () => {
+        const dy = lastY + window.scrollY - startY;
+        row.style.transform = "translateY(" + dy + "px)";
+        const center = mids[from] + dy;
+        to = mids.filter((m, j) => j !== from && m < center).length;
+        rows.forEach((r, j) => {
+          if (j === from) return;
+          let s = 0;
+          if (from < to && j > from && j <= to) s = -step;
+          if (from > to && j >= to && j < from) s = step;
+          r.style.transform = s ? "translateY(" + s + "px)" : "";
+        });
+      };
+      const autoScroll = () => {
+        const edge = 70;
+        let v = 0;
+        if (lastY < edge) v = -Math.ceil((edge - lastY) / 4);
+        else if (lastY > window.innerHeight - edge) v = Math.ceil((lastY - (window.innerHeight - edge)) / 4);
+        if (v) { window.scrollBy(0, v); update(); }
+      };
+      scrollTimer = setInterval(autoScroll, 16);
+      const move = ev => { lastY = ev.clientY; update(); };
+      const end = () => {
+        clearInterval(scrollTimer);
+        h.removeEventListener("pointermove", move);
+        h.removeEventListener("pointerup", end);
+        h.removeEventListener("pointercancel", end);
+        rows.forEach(r => { r.style.transform = ""; });
+        row.classList.remove("dragging");
+        if (to !== from) onDrop(from, to);
+      };
+      h.addEventListener("pointermove", move);
+      h.addEventListener("pointerup", end);
+      h.addEventListener("pointercancel", end);
+    };
+  });
+}
+
+function renderStart() {
+  const total = setup.people.reduce((a, p) => a + p.t, 0);
+  $("startBtn").textContent = "ŠTART   ·   spolu " + mmss(total);
+  $("startBtn").disabled = !setup.people.length;
+  $("startProjBtn").disabled = !setup.people.length;
+}
+function renderLang() {
+  $("langSk").setAttribute("aria-pressed", String(!setup.english));
+  $("langEn").setAttribute("aria-pressed", String(!!setup.english));
+  $("blinkSetup").checked = !!setup.blink;
+  $("blinkConsole").checked = !!setup.blink;
+}
+function renderSetupFields() {
+  $("evName").value = setup.name || (EV ? EV : "");
+  $("evHost").textContent = location.host + "/";
+  $("evSlug").value = EV;
+  $("slugRow").hidden = !EV;   // hlavná akcia má adresu iotimer.github.io bez názvu
+  $("defMin").value = Math.floor(setup.def / 60);
+  $("defSec").value = setup.def % 60;
+  $("breakText").value = setup.breakText;
+  renderLang();
+  renderList();
+}
+function setAllBreaks(v) { setup.people.forEach(p => { p.b = v; }); saveSetup(true); renderList(); }
+document.getElementById("brkAllOn").onclick = () => setAllBreaks(true);
+document.getElementById("brkAllOff").onclick = () => setAllBreaks(false);
+function addName(n) { n = n.trim(); if (n) setup.people.push({ n, t: setup.def, p: "" }); }
+
+$("addBtn").onclick = () => { addName($("newName").value); $("newName").value = ""; saveSetup(true); renderList(); };
+$("newName").onkeydown = e => { if (e.key === "Enter") $("addBtn").click(); };
+$("defMin").oninput = $("defSec").oninput = () => { setup.def = toSec($("defMin").value, $("defSec").value); saveSetup(); };
+$("applyAll").onclick = () => { setup.people.forEach(p => p.t = setup.def); saveSetup(true); renderList(); };
+$("breakText").oninput = () => { setup.breakText = $("breakText").value; saveSetup(); };
+$("langSk").onclick = () => { setup.english = false; saveSetup(true); renderLang(); };
+$("langEn").onclick = () => { setup.english = true; saveSetup(true); renderLang(); };
+["blinkSetup", "blinkConsole"].forEach(id => $(id).addEventListener("change", () => {
+  setup.blink = $(id).checked; saveSetup(true); renderLang(); $(id).blur();
+}));
+$("clearBtn").onclick = () => { $("clearAsk").hidden = false; };
+$("clearNo").onclick = () => { $("clearAsk").hidden = true; };
+$("clearYes").onclick = () => { setup.people = []; saveSetup(true); renderList(); $("clearAsk").hidden = true; };
+
+/* ---------- CSV ---------- */
+// čas: "3" alebo "2,5" = minúty, "3:30" = min:s, "1:02:30" = h:min:s
+function parseTime(v) {
+  v = String(v || "").trim().toLowerCase().replace(/\s*(min|m)\.?$/, "");
+  if (!v) return null;
+  if (/^\d+\s*s$/.test(v)) return parseInt(v);
+  if (/^\d+(:\d{1,2}){1,2}$/.test(v)) {
+    const p = v.split(":").map(Number);
+    return p.length === 2 ? p[0] * 60 + p[1] : p[0] * 3600 + p[1] * 60 + p[2];
+  }
+  const n = parseFloat(v.replace(",", "."));
+  if (!isNaN(n) && /^[\d.,]+$/.test(v)) return Math.round(n * 60);
+  return null;
+}
+function splitLine(line, d) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === d) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(x => x.trim());
+}
+// 4. stĺpec v CSV: prestávka po mene (áno / nie); prázdne = áno
+function brkCell(v) {
+  v = (v || "").trim().toLowerCase();
+  if (!v) return true;
+  return !/^(nie|n|no|0|false|bez|-)$/.test(v);
+}
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+  if (!lines.length) return [];
+  const first = lines[0];
+  const d = ["\t", ";", ","].map(c => [c, first.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows = [];
+  lines.forEach((line, i) => {
+    const cells = splitLine(line, d);
+    const name = cells[0];
+    if (!name) return;
+    const t = parseTime(cells[1]);
+    if (i === 0 && cells.length > 1 && cells[1] && t === null) return;   // riadok s nadpismi
+    rows.push({ n: name, t: t === null ? setup.def : t, p: cells[2] || "", b: brkCell(cells[3]) });
+  });
+  return rows;
+}
+function showCsvMsg(text, ok) {
+  const m = $("csvMsg");
+  m.hidden = false; m.textContent = text; m.className = "csvMsg " + (ok ? "ok" : "err");
+}
+function loadCsvFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    if (text.includes("\uFFFD")) {   // Excel niekedy ukladá vo Windows-1250
+      const r2 = new FileReader();
+      r2.onload = () => applyCsv(r2.result);
+      r2.readAsText(file, "windows-1250");
+      return;
+    }
+    applyCsv(text);
+  };
+  reader.readAsText(file, "utf-8");
+}
+function applyCsv(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) { showCsvMsg("V súbore som nenašiel žiadne mená. Skontroluj, či je meno v prvom stĺpci.", false); return; }
+  setup.people = $("csvAppend").checked ? setup.people.concat(rows) : rows;
+  saveSetup(true); renderList();
+  showCsvMsg("Načítané mená: " + rows.length + ".", true);
+}
+$("csvInput").onchange = () => { loadCsvFile($("csvInput").files[0]); $("csvInput").value = ""; };
+const drop = $("drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); loadCsvFile(e.dataTransfer.files[0]); });
+
+/* ---------- Čo je práve na obrazovke ---------- */
+// state (zdieľaný): mode idle|run, idx, between, finished, startedAt (ms), adj (s)
+function currentView() {
+  if (state.mode !== "run") return { mode: "idle" };
+  if (state.finished) return { mode: "end" };
+  if (state.between) return { mode: "break", breakText: setup.breakText };
+  const p = setup.people[state.idx];
+  if (!p) return { mode: "idle" };
+  return { mode: "name", name: p.n, title: p.p || "", base: p.t, seconds: Math.max(0, p.t + (state.adj || 0)),
+           startedAt: state.startedAt, overText: setup.english ? "Time's up" : "Čas vypršal", blink: !!setup.blink };
+}
+const remainingOf = v => v.startedAt == null ? v.seconds : v.seconds - (Date.now() - v.startedAt) / 1000;
+function fmt(sec) {
+  const r = sec > 0 ? Math.ceil(sec) : Math.floor(sec), a = Math.abs(r);
+  return (r < 0 ? "−" : "") + pad(Math.floor(a / 60)) + ":" + pad(a % 60);
+}
+function clockNow() { const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+
+function paintScreen(scr, v) {
+  const q = sel => scr.querySelector(sel);
+  q(".v-idle").hidden = v.mode !== "idle";
+  q(".v-break").hidden = v.mode !== "break";
+  q(".v-person").hidden = v.mode !== "name";
+  q(".v-end").hidden = v.mode !== "end";
+  let over = false;
+  if (v.mode === "break") { q(".s-break").textContent = v.breakText || ""; q(".s-time").textContent = clockNow(); }
+  if (v.mode === "name") {
+    q(".s-title").textContent = v.title; q(".s-title").hidden = !v.title;
+    q(".s-name").textContent = v.name;
+    const rem = remainingOf(v);
+    over = v.startedAt != null && rem <= 0;
+    const ck = q(".s-clock"), ct = fmt(rem);
+    if (ck.dataset.t !== ct) {
+      ck.dataset.t = ct;
+      if (ct.charAt(0) === "−") {
+        const mn = document.createElement("span"); mn.className = "mn"; mn.textContent = "−";
+        ck.replaceChildren(mn, ct.slice(1));
+      } else ck.textContent = ct;
+    }
+    q(".s-status").textContent = over ? v.overText : "";
+  }
+  scr.classList.toggle("over", over);
+  scr.classList.toggle("blink", over && !!v.blink);
+  return over;
+}
+
+/* ---------- Program a „nasleduje“ (autor aj divák) ---------- */
+function renderProgram(listEl, upEl) {
+  const run = state.mode === "run";
+  const idx = run ? state.idx : -1;
+  const people = setup.people;
+  const nextP = run && !state.finished ? people[idx + 1] : (run ? null : people[0]);
+  upEl.innerHTML = "";
+  if (!nextP) {
+    upEl.innerHTML = '<p class="muted">' + (run && state.finished ? "Program skončil." : (people.length ? "Toto je posledné meno." : "Program je prázdny.")) + "</p>";
+  } else {
+    const n = document.createElement("div"); n.className = "upName"; n.textContent = nextP.n;
+    const m = document.createElement("div"); m.className = "upMeta"; m.textContent = mmss(nextP.t) + (nextP.p ? " · " + nextP.p : "");
+    upEl.append(n, m);
+  }
+  const keepTop = listEl.scrollTop, pageX = window.scrollX, pageY = window.scrollY;
+  listEl.style.minHeight = listEl.offsetHeight + "px";   // pri prestavbe zoznamu sa stránka nezmrští
+  listEl.innerHTML = "";
+  people.forEach((p, i) => {
+    const li = document.createElement("li");
+    if (run && !state.between && !state.finished && i === idx) li.className = "cur";
+    else if (run && (i <= idx || state.finished)) li.className = "done";
+    const t = document.createElement("span"); t.className = "t"; t.textContent = mmss(p.t);
+    const d = document.createElement("span"); d.className = "pn"; d.textContent = p.n;
+    if (p.p) { const pt = document.createElement("span"); pt.className = "pt"; pt.textContent = p.p; d.appendChild(pt); }
+    if (li.className === "cur") {
+      const bar = document.createElement("div"); bar.className = "bar";
+      li.appendChild(bar);
+    }
+    const rowg = document.createElement("div"); rowg.className = "rowg";
+    rowg.append(t, d);
+    li.appendChild(rowg);
+    listEl.appendChild(li);
+  });
+  // posunie iba samotný zoznam, nikdy celú stránku (na iPhone inak skákal obraz)
+  listEl.style.minHeight = "";
+  listEl.scrollTop = keepTop;
+  const cur = listEl.querySelector(".cur");
+  if (cur && listEl.scrollHeight > listEl.clientHeight + 1) {
+    const lr = listEl.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+    if (cr.top < lr.top) listEl.scrollTop += cr.top - lr.top;
+    else if (cr.bottom > lr.bottom) listEl.scrollTop += cr.bottom - lr.bottom;
+  }
+  window.scrollTo(pageX, pageY);
+}
+
+/* ---------- Ovládanie (autor) ---------- */
+let actx = null, beepedKey = null;
+function beep() {
+  if (!actx) return;
+  const t0 = actx.currentTime;
+  for (let i = 0; i < 6; i++) {
+    const o = actx.createOscillator(), g = actx.createGain(), t = t0 + i * 0.35;
+    o.type = "sine"; o.frequency.value = i % 2 ? 660 : 880;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.4, t + 0.02); g.gain.linearRampToValueAtTime(0, t + 0.28);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.3);
+  }
+}
+function setState(n) {
+  state = n;
+  onStateChange();
+  write(TID, n);
+}
+function canAct() { return isOp && !projector && !viewerFull && state.mode === "run"; }
+function next() {
+  if (!canAct()) return;
+  const s = state;
+  if (s.finished) { stop(); return; }
+  hist.push(Object.assign({}, s));
+  if (hist.length > 300) hist.shift();
+  const n = Object.assign({}, s);
+  if (s.between) { n.between = false; n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }
+  else if (s.startedAt == null) { n.startedAt = Date.now(); }
+  else if (s.idx + 1 < setup.people.length) {
+    if (setup.people[s.idx].b !== false) { n.between = true; n.startedAt = null; }
+    else { n.idx = s.idx + 1; n.startedAt = null; n.adj = 0; }   // bez prestávky: hneď ďalšie meno
+  }
+  else { n.finished = true; n.startedAt = null; }
+  setState(n);
+}
+function back() {
+  if (!canAct() || !hist.length) return;
+  setState(hist.pop());
+}
+function adjust(d) {
+  if (!canAct() || state.between || state.finished) return;
+  const p = setup.people[state.idx];
+  if (!p) return;
+  setState(Object.assign({}, state, { adj: Math.max(-p.t, (state.adj || 0) + d) }));
+  beepedKey = null;   // po predĺžení môže znova pípnuť
+}
+function startShow() {
+  if (!setup.people.length) return;
+  clearTimeout(setupTimer); write(SID, setup);
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+  hist = [];
+  setState({ mode: "run", idx: -1, between: true, finished: false, startedAt: null, adj: 0 });
+}
+function stop() { hist = []; setState({ mode: "idle" }); }
+
+function renderConsole() {
+  const s = state;
+  const nxt = setup.people[s.idx + 1];
+  let label;
+  if (s.finished) label = "Späť na zoznam";
+  else if (s.between) label = nxt ? "Zobraziť: " + nxt.n : "Ďalej";
+  else if (s.startedAt == null) label = "Spustiť odpočet";
+  else label = !nxt ? "Ukončiť program" : (setup.people[s.idx] && setup.people[s.idx].b === false ? "Ukončiť → " + nxt.n : "Ukončiť a prestávka");
+  const nx = document.createElement("span"); nx.className = "nx"; nx.textContent = label + "  ▶";
+  $("nextBtn").replaceChildren(nx);
+  $("backBtn").disabled = !hist.length;
+  const canAdj = !s.finished && !s.between;
+  document.querySelectorAll(".adj").forEach(b => b.disabled = !canAdj);
+  const a = s.adj || 0;
+  $("adjInfo").textContent = canAdj && a ? "upravené o " + (a > 0 ? "+" : "−") + mmss(Math.abs(a)) : "";
+}
+
+$("startBtn").onclick = startShow;
+// otvorí druhé okno s časomierou (projektor); okno sa samo pripojí k databáze
+let projWin = null;
+function openProjectorWindow() {
+  if (projWin && !projWin.closed) { try { projWin.focus(); } catch (e) {} return true; }
+  projWin = window.open(evUrl(EV, "projektor"), "iotimer-projektor", "popup=yes,width=1024,height=576");
+  return !!projWin;
+}
+$("startProjBtn").onclick = () => {
+  const ok = openProjectorWindow();
+  $("popupMsg").hidden = ok;
+  $("popupMsg").textContent = ok ? "" : "Prehliadač zablokoval nové okno. Povoľ vyskakovacie okná pre iotimer.github.io alebo otvor odkaz pre projektor ručne.";
+  startShow();
+};
+$("nextBtn").onclick = () => { $("nextBtn").blur(); next(); };
+$("backBtn").onclick = () => { $("backBtn").blur(); back(); };
+document.querySelectorAll(".adj").forEach(b => b.addEventListener("click", () => { b.blur(); adjust(parseInt(b.dataset.d)); }));
+$("cQuit").onclick = () => { $("cQuitAsk").hidden = false; $("cQuit").hidden = true; };
+$("cQuitNo").onclick = () => { $("cQuitAsk").hidden = true; $("cQuit").hidden = false; };
+$("cQuitYes").onclick = () => { $("cQuitAsk").hidden = true; $("cQuit").hidden = false; stop(); };
+document.addEventListener("keydown", e => {
+  if (!canAct()) return;
+  if (e.target.closest && e.target.closest("input, textarea")) return;
+  if (["Space", "Enter", "ArrowRight", "PageDown"].includes(e.code)) { e.preventDefault(); next(); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.code)) { e.preventDefault(); back(); }
+  else if (e.code === "ArrowUp") { e.preventDefault(); adjust(30); }
+  else if (e.code === "ArrowDown") { e.preventDefault(); adjust(-30); }
+  else if (e.key === "+" || e.code === "NumpadAdd" || e.code === "Equal") { e.preventDefault(); adjust(60); }
+  else if (e.key === "-" || e.code === "NumpadSubtract" || e.code === "Minus") { e.preventDefault(); adjust(-60); }
+});
+
+/* ---------- Celá obrazovka / projektor ---------- */
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && navigator.wakeLock && !wake) wake = await navigator.wakeLock.request("screen");
+    if (!on && wake) { await wake.release(); wake = null; }
+  } catch (e) { wake = null; }
+}
+function enterFull() { const el = document.documentElement; try { const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+function exitFull() { try { if (document.fullscreenElement || document.webkitFullscreenElement) { const p = (document.exitFullscreen || document.webkitExitFullscreen).call(document); if (p && p.catch) p.catch(() => {}); } } catch (e) {} }
+// spustené z ikony na ploche (iPhone/iPad) sa ráta ako celá obrazovka
+const isStandalone = () => window.navigator.standalone === true ||
+  (window.matchMedia && (matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches));
+const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
+function openStage(asProjector) {
+  if (asProjector) projector = true; else viewerFull = true;
+  enterFull(); keepAwake(true);
+  render();
+}
+$("asProjector1").onclick = () => openStage(true);
+$("openProjBtn").onclick = () => { if (!openProjectorWindow()) showSaveError("Prehliadač zablokoval nové okno. Povoľ vyskakovacie okná pre iotimer.github.io."); };
+$("vFull").onclick = () => openStage(false);
+$("stage").addEventListener("click", e => { if (e.target.id !== "stageExit") { enterFull(); keepAwake(true); } });
+$("stageExit").onclick = () => {
+  if (route() === "projektor") history.replaceState(null, "", location.pathname + location.search);
+  projector = false; viewerFull = false; exitFull(); onStateChange();
+};
+document.addEventListener("fullscreenchange", () => render());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { wake = null; render(); } });
+
+/* ---------- Vykreslenie ---------- */
+function section() {
+  if (projector || viewerFull) return "stage";
+  if (route() === "ovladanie") {
+    if (!isOp) return "login";
+    if (isHome()) return "events";
+    return state.mode === "run" ? "console" : "setup";
+  }
+  return "viewer";
+}
+function onStateChange() {
+  if (!db) return;
+  $("cEvName").textContent = setup.name ? " · " + setup.name : "";
+  $("vEvName").textContent = setup.name || "Odpočet";
+  $("sTitle").textContent = setup.name || (EV ? EV : "Hlavná akcia");
+  document.title = (setup.name ? setup.name + " – " : "") + "ioTimer";
+  render();
+  if (section() === "console") { renderConsole(); renderProgram($("prog"), $("upNext")); }
+  if (section() === "viewer") renderProgram($("vProg"), $("vUp"));
+  paintProgramBar(currentView());   // lišta hneď na správnom mieste, bez skoku na začiatok
+}
+function render() {
+  if (!db) return;
+  const sec = section();
+  ["login", "events", "setup", "console", "viewer", "stage"].forEach(id => $(id).hidden = id !== sec);
+  // len časomiera: bez posuvnej lišty vpravo
+  document.documentElement.classList.toggle("stageOn", sec === "stage");
+  document.documentElement.style.overflow = sec === "stage" ? "hidden" : "";
+  document.body.style.overflow = sec === "stage" ? "hidden" : "";
+  if (sec === "stage") {
+    $("stageHint").hidden = isFull();
+    // iPhone nevie zapnúť celú obrazovku z webu: poradí, ako na to
+    const el = document.documentElement;
+    const canFull = !!(el.requestFullscreen || el.webkitRequestFullscreen);
+    $("stageHint").textContent = canFull ? "Ťukni sem pre celú obrazovku"
+      : "Celá obrazovka na iPhone: Zdieľať → Pridať na plochu a otvor ioTimer z ikony";
+  }
+  tick();
+}
+// lišta a zostávajúci čas pri aktuálnom mene v programe
+function paintProgramBar(v) {
+  document.querySelectorAll(".prog li.cur").forEach(li => {
+    const bar = li.querySelector(".bar"), t = li.querySelector(".t");
+    if (!bar || v.mode !== "name") return;
+    let frac = 0, over = false, label = mmss(v.seconds);
+    if (v.startedAt != null) {
+      const rem = remainingOf(v);
+      over = rem <= 0;
+      // mierka = pôvodne naplánovaný čas (pri predĺžení celkový čas): skrátenie času posunie
+      // lištu dopredu, na konci času je lišta vždy presne na konci
+      const scale = Math.max(v.base || 0, v.seconds);
+      frac = scale > 0 ? Math.min(1, Math.max(0, 1 - rem / scale)) : 1;
+      label = fmt(rem);
+    }
+    bar.style.transform = "scaleX(" + frac.toFixed(4) + ")";
+    t.textContent = label;
+    li.classList.toggle("over", over);
+  });
+}
+function tick() {
+  if (!db) return;
+  const v = currentView();
+  const sec = section();
+  let over = false;
+  if (sec === "stage") over = paintScreen($("stageScreen"), v);
+  if (sec === "console") over = paintScreen($("preview"), v);
+  if (sec === "viewer") paintScreen($("vScreen"), v);
+  if (sec === "console" || sec === "viewer") paintProgramBar(v);
+  if (sec === "console" && over) {
+    const key = state.idx + ":" + state.startedAt + ":" + (state.adj || 0);
+    if (beepedKey !== key) { beepedKey = key; beep(); }
+  }
+  if (sec === "console" || sec === "stage") keepAwake(true);
+}
+setInterval(tick, 200);
+
+/* ---------- Pripojenie k databáze Supabase ---------- */
+function applySetupDoc(d) {
+  d = d || {};
+  if (d.movedTo && EV && cleanSlug(d.movedTo) && cleanSlug(d.movedTo) !== EV) {
+    location.replace(evUrl(cleanSlug(d.movedTo), route()));
+    return;
+  }
+  setup = {
+    people: Array.isArray(d.people) ? d.people.map(p => ({ n: p.n || "", t: p.t || 0, p: p.p || "", b: p.b !== false })) : [],
+    name: d.name || "",
+    def: d.def || 180,
+    breakText: d.breakText != null ? d.breakText : "Prestávka",
+    english: !!d.english,
+    blink: !!d.blink
+  };
+}
+// Autor v ovládaní je zdrojom pravdy: ozveny vlastných zápisov ignoruje,
+// aby mu rýchle ťuknutia ani písanie neskákali späť.
+const isControlling = () => isOp && route() === "ovladanie" && !projector && !viewerFull;
+function applyRow(row) {
+  if (!row || !row.id || (row.id !== SID && row.id !== TID)) return;
+  const at = row.updated_at || "";
+  if (lastUpdated[row.id] && at && at <= lastUpdated[row.id]) return;  // staršia alebo rovnaká verzia
+  if (isControlling()) return;
+  if (at) lastUpdated[row.id] = at;
+  if (row.id !== SID && row.id !== TID) return;   // iná akcia
+  if (row.id === TID) state = row.data && row.data.mode ? row.data : { mode: "idle" };
+  if (row.id === SID) applySetupDoc(row.data);
+  onStateChange();
+}
+async function fetchAll() {
+  let q = sb.from(TABLE).select("id,data,updated_at");
+  if (q && typeof q.in === "function") q = q.in("id", [SID, TID]);   // len táto akcia
+  const res = await q;
+  if (res.error) throw res.error;
+  return res.data || [];
+}
+function setPill(ok) {
+  const p = $("vPill");
+  p.textContent = ok ? "Naživo" : "Pripája sa…";
+  p.className = "pill" + (ok ? "" : " wait");
+}
+
+let realtimeOk = false, evTimer = null;
+function startRealtime() {
+  sb.channel("odpocet-zmeny")
+    .on("postgres_changes", { event: "*", schema: "public", table: TABLE }, payload => {
+      if (isHome() && isOp) { clearTimeout(evTimer); evTimer = setTimeout(loadEvents, 400); return; }
+      applyRow(payload.new);
+    })
+    .subscribe(status => {
+      realtimeOk = status === "SUBSCRIBED";
+      setPill(realtimeOk);
+      if (realtimeOk) refresh();   // po (opätovnom) pripojení načítaj aktuálny stav
+    });
+  // poistka, keby realtime spojenie vypadlo
+  setInterval(refresh, 10000);
+}
+let liteOk = false;
+function liteClient() {
+  return { from: () => ({ select: cols => new Promise(resolve => {
+    const x = new XMLHttpRequest();
+    x.open("GET", SUPABASE_URL + "/rest/v1/" + TABLE + "?select=" + encodeURIComponent(cols) + "&id=in.(" + encodeURIComponent('"' + SID + '","' + TID + '"') + ")");
+    x.setRequestHeader("apikey", SUPABASE_KEY);
+    x.setRequestHeader("Authorization", "Bearer " + SUPABASE_KEY);
+    x.timeout = 8000;
+    x.onload = () => { liteOk = x.status === 200; try { resolve(liteOk ? { data: JSON.parse(x.responseText) } : { error: { message: "HTTP " + x.status } }); } catch (e) { resolve({ error: e }); } };
+    x.onerror = x.ontimeout = () => { liteOk = false; resolve({ error: { message: "sieť" } }); };
+    x.send();
+  }) }) };
+}
+async function refresh() {
+  if (isControlling()) return;
+  try { (await fetchAll()).forEach(applyRow); } catch (e) {}
+}
+
+function fillLinks() {
+  $("linkViewer").textContent = shortUrl(evUrl(EV, ""));
+  $("linkProjector").textContent = shortUrl(evUrl(EV, "projektor"));
+  $("linkViewer").dataset.url = evUrl(EV, "");
+  $("linkProjector").dataset.url = evUrl(EV, "projektor");
+}
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", async () => {
+  const el = $(b.dataset.target), text = el.dataset.url || el.textContent;
+  try { await navigator.clipboard.writeText(text); b.textContent = "Skopírované"; }
+  catch (e) {
+    const range = document.createRange(); range.selectNodeContents($(b.dataset.target));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    b.textContent = "Označené, skopíruj";
+  }
+  setTimeout(() => { b.textContent = "Kopírovať"; }, 2000);
+}));
+
+async function enterControl() {
+  if (isHome()) { document.title = "Akcie – ioTimer"; render(); await loadEvents(); return; }
+  // po prihlásení: načítaj program aj stav (napr. po obnovení stránky počas programu)
+  try {
+    const rows = await fetchAll();
+    rows.forEach(r => {
+      if (r.updated_at) lastUpdated[r.id] = r.updated_at;
+      if (r.id === SID) applySetupDoc(r.data);
+      if (r.id === TID) state = r.data && r.data.mode ? r.data : { mode: "idle" };
+    });
+  } catch (e) {
+    showSaveError("Program sa nepodarilo načítať: " + (e.message || "skontroluj pripojenie"));
+  }
+  fillLinks();
+  renderSetupFields();
+  onStateChange();
+  loadEvents();
+}
+
+/* ---------- Viac akcií ---------- */
+const slugify = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "akcia";
+let events = [], allSlugs = new Set();
+async function loadEvents() {
+  $("evErr").hidden = true;
+  try {
+    const res = await sb.from(TABLE).select("id,data,updated_at");
+    if (res.error) throw res.error;
+    const rows = res.data || [];
+    allSlugs = new Set(rows.filter(r => r.id.startsWith("setup:")).map(r => r.id.slice(6)));
+    const run = {}, at = {};
+    rows.filter(r => r.id === "state" || r.id.startsWith("state:")).forEach(r => {
+      const slug = r.id === "state" ? "" : r.id.slice(6);
+      run[slug] = !!(r.data && r.data.mode === "run");
+      at[slug] = r.updated_at || "";
+    });
+    events = rows.filter(r => (r.id === "setup" || r.id.startsWith("setup:")) && !(r.data && r.data.movedTo)).map(r => {
+      const slug = r.id === "setup" ? "" : r.id.slice(6);
+      const d = r.data || {};
+      const last = [r.updated_at || "", at[slug] || ""].sort().pop();
+      return { slug, name: d.name || (slug || "Hlavná akcia"), run: !!run[slug],
+               count: Array.isArray(d.people) ? d.people.length : 0, at: last };
+    });
+    events.sort((a, b) => (b.run - a.run) || (b.at > a.at ? 1 : b.at < a.at ? -1 : 0));
+  } catch (e) { $("evErr").textContent = "Zoznam akcií sa nepodarilo načítať. Obnov stránku."; $("evErr").hidden = false; }
+  renderEvents();
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.getDate() + ". " + (d.getMonth() + 1) + ". " + d.getFullYear();
+}
+function renderEvents() {
+  const L = $("evList");
+  L.innerHTML = "";
+  $("evEmpty").hidden = events.length > 0;
+  events.forEach(ev => {
+    const li = document.createElement("li");
+    const meta = document.createElement("div"); meta.className = "meta";
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = ev.name;
+    const st = document.createElement("span"); st.className = "st" + (ev.run ? " run" : "");
+    st.textContent = (ev.run ? "● beží · " : "") + ev.count + (ev.count === 1 ? " rečník" : ev.count >= 2 && ev.count <= 4 ? " rečníci" : " rečníkov") +
+      (ev.at ? " · upravené " + fmtDate(ev.at) : "");
+    meta.append(nm, st);
+    const open = document.createElement("button"); open.className = "primary"; open.textContent = "Otvoriť";
+    const tab = document.createElement("button"); tab.textContent = "Nová karta"; tab.title = "Otvorí akciu v novej karte, aby si mohol ovládať viac akcií naraz";
+    open.onclick = e => { e.stopPropagation(); location.href = evUrl(ev.slug, "ovladanie"); };
+    tab.onclick = e => { e.stopPropagation(); window.open(evUrl(ev.slug, "ovladanie"), "_blank"); };
+    li.onclick = () => { location.href = evUrl(ev.slug, "ovladanie"); };
+    li.append(meta, tab, open);
+    L.appendChild(li);
+  });
+}
+$("evName").oninput = () => {
+  const old = setup.name, v = $("evName").value;
+  setup.name = v;
+  // prestávkový text ide s názvom akcie, kým ho autor nezmení na iný
+  if (!setup.breakText || setup.breakText === old || (!old && setup.breakText === "Prestávka")) { setup.breakText = v; $("breakText").value = v; }
+  saveSetup();
+};
+// návrh krátkej adresy: prvé slová názvu, najviac 20 znakov
+function suggestSlug(name) {
+  const parts = slugify(name).split("-").filter(Boolean);
+  let out = "";
+  for (const w of parts) { if ((out ? out.length + 1 : 0) + w.length > 20) break; out = out ? out + "-" + w : w; }
+  return out || parts[0] && parts[0].slice(0, 20) || "akcia";
+}
+function slugProblem(slug, own) {
+  if (!slug || slug.length < 2) return "Adresa musí mať aspoň 2 znaky.";
+  if (slug.length > 40) return "Adresa môže mať najviac 40 znakov.";
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) return "Použi len malé písmená bez diakritiky, číslice a pomlčku.";
+  if (RESERVED.includes(slug)) return "Táto adresa je vyhradená, zvoľ inú.";
+  if (slug !== own && allSlugs.has(slug)) return "Táto adresa už existuje, zvoľ inú.";
+  return "";
+}
+let slugTouched = false;
+$("newEvHost").textContent = location.host + "/";
+$("newEvName").addEventListener("input", () => { if (!slugTouched) $("newEvSlug").value = suggestSlug($("newEvName").value); });
+$("newEvSlug").addEventListener("input", () => { slugTouched = !!$("newEvSlug").value; $("newEvSlug").value = $("newEvSlug").value.toLowerCase().replace(/\s+/g, "-"); });
+$("newEvSlug").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
+async function createEvent() {
+  const name = $("newEvName").value.trim();
+  $("evErr").hidden = true;
+  if (!name) { $("newEvName").focus(); return; }
+  const slug = cleanSlug($("newEvSlug").value) || suggestSlug(name);
+  const prob = slugProblem(slug, null);
+  if (prob) { $("evErr").textContent = prob; $("evErr").hidden = false; $("newEvSlug").focus(); return; }
+  $("newEvBtn").disabled = true;
+  const doc = { name, people: [], def: setup.def || 180, breakText: name, english: !!setup.english, blink: !!setup.blink };
+  const stamp = new Date().toISOString();
+  const r1 = await sb.from(TABLE).upsert({ id: "setup:" + slug, data: doc, updated_at: stamp });
+  const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + slug, data: { mode: "idle" }, updated_at: stamp });
+  $("newEvBtn").disabled = false;
+  if (r2.error) { $("evErr").textContent = "Akciu sa nepodarilo vytvoriť: " + r2.error.message; $("evErr").hidden = false; return; }
+  $("newEvName").value = ""; $("newEvSlug").value = ""; slugTouched = false;
+  location.href = evUrl(slug, "ovladanie");   // nová akcia sa otvorí v tejto karte
+}
+$("newEvBtn").onclick = createEvent;
+async function renameSlug() {
+  const to = cleanSlug($("evSlug").value);
+  $("slugErr").hidden = true;
+  if (to === EV) return;
+  if (!allSlugs.size) await loadEvents();
+  const prob = slugProblem(to, EV);
+  if (prob) { $("slugErr").textContent = prob; $("slugErr").hidden = false; return; }
+  $("evSlugBtn").disabled = true;
+  clearTimeout(setupTimer);
+  const stamp = new Date().toISOString();
+  const r1 = await sb.from(TABLE).upsert({ id: "setup:" + to, data: setup, updated_at: stamp });
+  const r2 = r1.error ? r1 : await sb.from(TABLE).upsert({ id: "state:" + to, data: state, updated_at: stamp });
+  // stará adresa presmeruje na novú (staré odkazy fungujú ďalej)
+  const r3 = r2.error ? r2 : await sb.from(TABLE).upsert({ id: SID, data: { movedTo: to, name: setup.name }, updated_at: stamp });
+  $("evSlugBtn").disabled = false;
+  if (r3.error) { $("slugErr").textContent = "Adresu sa nepodarilo zmeniť: " + r3.error.message; $("slugErr").hidden = false; return; }
+  location.replace(evUrl(to, "ovladanie"));
+}
+$("evSlugBtn").onclick = renameSlug;
+$("evSlug").addEventListener("keydown", e => { if (e.key === "Enter") renameSlug(); });
+$("cEvBtn").onclick = () => { location.href = homeUrl(); };
+$("toEvents").onclick = () => { location.href = homeUrl(); };
+$("newEvName").addEventListener("keydown", e => { if (e.key === "Enter") createEvent(); });
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginErr").hidden = true;
+  $("loginBtn").disabled = true;
+  const res = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  $("loginBtn").disabled = false;
+  if (res.error) {
+    $("loginErr").textContent = "Prihlásenie sa nepodarilo. Skontroluj e-mail a heslo.";
+    $("loginErr").hidden = false;
+    return;
+  }
+  session = res.data.session; isOp = true;
+  await enterControl();
+});
+$("logoutBtn2").onclick = () => $("logoutBtn").click();
+$("logoutBtn").onclick = async () => {
+  await sb.auth.signOut();
+  session = null; isOp = false;
+  render();
+};
+window.addEventListener("hashchange", () => {
+  projector = route() === "projektor";
+  if (route() === "ovladanie" && isOp) enterControl(); else { refresh(); onStateChange(); }
+});
+
+(async () => {
+  const cfgOk = typeof SUPABASE_URL === "string" && SUPABASE_URL.startsWith("http") &&
+             typeof SUPABASE_KEY === "string" && SUPABASE_KEY.length > 20;
+  // náhradné čítanie bez knižnice (staré prehliadače): iba pre divákov a projektor
+  if (cfgOk && route() !== "ovladanie") {
+    let lib = null;
+    try { lib = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null; } catch (e) { lib = null; }
+    if (!lib) {
+      $("loading").hidden = true;
+      sb = db = liteClient();
+      onStateChange();
+      const poll = () => refresh().then(() => setPill(liteOk));
+      poll(); setInterval(poll, 2000);
+      return;
+    }
+  }
+  const ok = cfgOk && window.supabase;
+  $("loading").hidden = true;
+  if (!ok) {
+    $("noaccessText").textContent = window.supabase
+      ? "Chýba nastavenie pripojenia k databáze. Doplň SUPABASE_URL a SUPABASE_KEY na začiatku súboru index.html."
+      : "Nepodarilo sa načítať knižnicu Supabase. Skontroluj pripojenie na internet a obnov stránku.";
+    $("noaccess").hidden = false;
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  db = sb;
+  onStateChange();   // hneď ukáž stránku, dáta sa dočítajú
+  try {
+    const s = await sb.auth.getSession();
+    session = s.data ? s.data.session : null;
+  } catch (e) { session = null; }
+  isOp = !!session;
+  onStateChange();
+  startRealtime();
+  if (route() === "ovladanie" && isOp) await enterControl();
+  else await refresh();
+  onStateChange();
+})();
+</script>
+<div class="ver" id="ver">verzia 12. 11. 2026 j</div>
+</body>
+</html>
