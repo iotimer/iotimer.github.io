@@ -309,21 +309,6 @@ button.back{font-size:18px;padding:0 18px}
     <p class="err" id="slugErr" hidden></p>
   </div>
 
-  <div class="card" id="reportCard" hidden>
-    <h2>Prehľad po akcii</h2>
-    <div class="row noprint" id="repRunRow" hidden>
-      <label class="muted" for="repRun">Spustenie:</label>
-      <select id="repRun"></select>
-    </div>
-    <div id="repTitle" class="muted" style="margin:4px 0 8px"></div>
-    <div class="repSum" id="repSum"></div>
-    <div class="repWrap"><table class="rep" id="repTable"></table></div>
-    <div class="row noprint" style="margin-top:12px">
-      <button id="repCsv">Stiahnuť tabuľku (CSV)</button>
-      <button id="repPrint">Vytlačiť / uložiť PDF</button>
-    </div>
-  </div>
-
   <div class="card share">
     <h2>Odkazy</h2>
     <p class="muted"><b>Pre divákov</b>: vidia bežiacu časomieru a program, nič nemôžu meniť a nemusia sa prihlasovať.</p>
@@ -406,6 +391,24 @@ button.back{font-size:18px;padding:0 18px}
   <p class="muted"><b>ŠTART s projektorom</b> otvorí druhé okno s časomierou: presuň ho na projektor alebo rozšírenú obrazovku a ťukni doň, zapne sa celá obrazovka. Ovládanie ostane tu.</p>
   <p class="status" id="popupMsg" hidden></p>
   <p class="status" id="saveStatus" hidden></p>
+
+  <div class="card" id="reportCard" hidden>
+    <h2>Prehľad po akcii</h2>
+    <div class="row noprint" id="repRunRow" hidden>
+      <label class="muted" for="repRun">Spustenie:</label>
+      <select id="repRun"></select>
+    </div>
+    <div id="repTitle" class="muted" style="margin:4px 0 8px"></div>
+    <div class="repSum" id="repSum"></div>
+    <div class="repWrap"><table class="rep" id="repTable"></table></div>
+    <div class="row noprint" style="margin-top:12px">
+      <button id="repCsv">Stiahnuť tabuľku (CSV)</button>
+      <button id="repPrint">Vytlačiť / uložiť PDF</button>
+      <span class="grow"></span>
+      <button class="danger" id="repReset">Reset prehľadu</button>
+      <span id="repResetAsk" hidden>Vymazať prehľad všetkých spustení? Program ostane. <button class="danger" id="repResetYes">Áno, vymazať</button> <button id="repResetNo">Zrušiť</button></span>
+    </div>
+  </div>
 </div>
 
 <!-- AUTOR: ovládací panel počas programu -->
@@ -722,6 +725,14 @@ function reportCsv() {
 $("repRun").onchange = renderReport;
 $("repCsv").onclick = reportCsv;
 $("repPrint").onclick = () => window.print();
+$("repReset").onclick = () => { $("repResetAsk").hidden = false; $("repReset").hidden = true; };
+$("repResetNo").onclick = () => { $("repResetAsk").hidden = true; $("repReset").hidden = false; };
+$("repResetYes").onclick = () => {
+  report = { runs: [] };   // zoznam mien a nastavenia sa nemenia
+  saveReport();
+  $("repResetAsk").hidden = true; $("repReset").hidden = false;
+  renderReport();
+};
 function renderStart() {
   const total = setup.people.reduce((a, p) => a + p.t, 0);
   const pe = planEnd();
@@ -1720,6 +1731,6 @@ window.addEventListener("hashchange", () => {
   onStateChange();
 })();
 </script>
-<div class="ver" id="ver">verzia 12. 11. 2026 o</div>
+<div class="ver" id="ver">verzia 12. 11. 2026 p</div>
 </body>
 </html>
